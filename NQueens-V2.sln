@@ -1,0 +1,51 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.2.32616.157
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "NQueens-V2", "NQueens-V2.vcxproj", "{F8EFC76B-EF87-4928-85CC-C9520D8865D1}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{FEE524CB-29AF-424D-AED4-302B13A00195}"
+	ProjectSection(SolutionItems) = preProject
+		bitsets.cuh = bitsets.cuh
+		bitword.cuh = bitword.cuh
+		constants.cuh = constants.cuh
+		diagonals.cuh = diagonals.cuh
+		..\libs\longer-int\longer-int.c = ..\libs\longer-int\longer-int.c
+		longer-int.c = longer-int.c
+		..\libs\longer-int\longer-int.h = ..\libs\longer-int\longer-int.h
+		longer-int.h = longer-int.h
+		n_queens.cu = n_queens.cu
+		n_queens.cuh = n_queens.cuh
+		..\..\..\..\..\Downloads\pthreads4w-code-07053a521b0a9deb6db2a649cde1f828f2eb1f4f\pthreadVC3.dll = ..\..\..\..\..\Downloads\pthreads4w-code-07053a521b0a9deb6db2a649cde1f828f2eb1f4f\pthreadVC3.dll
+		..\..\..\..\..\Downloads\pthreads4w-code-07053a521b0a9deb6db2a649cde1f828f2eb1f4f\pthreadVC3d.dll = ..\..\..\..\..\Downloads\pthreads4w-code-07053a521b0a9deb6db2a649cde1f828f2eb1f4f\pthreadVC3d.dll
+		test.cu = test.cu
+	EndProjectSection
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|x64 = Debug|x64
+		Debug3090|x64 = Debug3090|x64
+		Release|x64 = Release|x64
+		Release2080|x64 = Release2080|x64
+		Release3090|x64 = Release3090|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{F8EFC76B-EF87-4928-85CC-C9520D8865D1}.Debug|x64.ActiveCfg = Debug|x64
+		{F8EFC76B-EF87-4928-85CC-C9520D8865D1}.Debug|x64.Build.0 = Debug|x64
+		{F8EFC76B-EF87-4928-85CC-C9520D8865D1}.Debug3090|x64.ActiveCfg = Debug3090|x64
+		{F8EFC76B-EF87-4928-85CC-C9520D8865D1}.Debug3090|x64.Build.0 = Debug3090|x64
+		{F8EFC76B-EF87-4928-85CC-C9520D8865D1}.Release|x64.ActiveCfg = Release|x64
+		{F8EFC76B-EF87-4928-85CC-C9520D8865D1}.Release|x64.Build.0 = Release|x64
+		{F8EFC76B-EF87-4928-85CC-C9520D8865D1}.Release2080|x64.ActiveCfg = Release2080|x64
+		{F8EFC76B-EF87-4928-85CC-C9520D8865D1}.Release2080|x64.Build.0 = Release2080|x64
+		{F8EFC76B-EF87-4928-85CC-C9520D8865D1}.Release3090|x64.ActiveCfg = Release3090|x64
+		{F8EFC76B-EF87-4928-85CC-C9520D8865D1}.Release3090|x64.Build.0 = Release3090|x64
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ExtensibilityGlobals) = postSolution
+		SolutionGuid = {09BCFC55-5571-4249-A3DD-A26139C22BAA}
+	EndGlobalSection
+EndGlobal
