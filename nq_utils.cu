@@ -7,6 +7,7 @@
 #include "nq_utils.cuh"
 #include "string.h"
 #include "math.h"
+#include "assert.h"
 
 #define NQ_STATE_UTIL_CMP_INTEGERS_ORDERING(a,b) (((a)>(b))-((a)<(b)))
 
@@ -55,8 +56,6 @@ const static uint32_t crc_mtable[] = { // source: https://web.mit.edu/freebsd/he
 	0x54de5729, 0x23d967bf, 0xb3667a2e, 0xc4614ab8, 0x5d681b02, 0x2a6f2b94,
 	0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
 };
-const static unsigned short nq_file_version = 0;//Versions go from 0 to 0xFF
-const static unsigned short nq_minified_file_version = 0xFF << 8;// Versions go from 0xFF00 to 0xFFFF
 
 
 static int nq_state_sort_cmp(const void* a, const void* b) {
@@ -81,155 +80,114 @@ char* util_large_integer_string_decimal_sep(char* num) {
 	return ret;
 }
 
-// Assumes valid buffer with queens only up to locked row.
-// NOTE: CRC of buffer is not written. Since states are padded, crc of buffer on serialization won't match that of deserialization!
-int util_minified_write_nq_states_to_stream(FILE* const out, nq_state_t* states, const uint64_t len, const unsigned char locked_at_row) {
-	if (out) {
-		const size_t buflen = len * (locked_at_row + 1);
-		unsigned char* positions = (unsigned char*)malloc(sizeof(unsigned char) * buflen);
-		if (!positions)
-			return 2;
-
-		uint32_t chsm_states = 0;
-		for (uint64_t i = 0; i < len; ++i) {
-			memcpy(positions + i * (locked_at_row + 1), states[i].queen_at_index, sizeof(unsigned char) * locked_at_row);
-			positions[i * (locked_at_row + 1) + locked_at_row] = states[i].curr_row;
-			chsm_states += crc32_chsm(positions + i * (locked_at_row + 1), sizeof(unsigned char), locked_at_row + 1);
-		}
+//File format:
+//1 byte: N
+//1 byte: Locked row
+//8 bytes: Total states written
+//
+// Subheader data follows. Up to N sub headers.
+// Each subheader preceeds a number of state data that all have been populated up to row 'x':
+//1 byte: latest populated row 'lr'
+//8 bytes: number 'z' of state data that follows.
+// <z many queen position arryas each of length lr>
+//1 byte: latest populated row 'lr'
+//8 bytes: number 'z' of state data that follows.
+// <z many queen position arryas each of length lr>
+// ............
+int util_write_nq_states_to_stream(FILE* const stream, nq_state_t* states, uint64_t len, const unsigned char locked_at_row) {
+	if (stream && len) {
 		const unsigned char en = N;
-		fwrite(&nq_minified_file_version, sizeof(unsigned short), 1, out);
-		fwrite(&en, sizeof(unsigned char), 1, out);
-		fwrite(&locked_at_row, sizeof(unsigned char), 1, out);
-		fwrite(&len, sizeof(uint64_t), 1, out);
-		fwrite(positions, sizeof(unsigned char), buflen, out);
-		free(positions);
-		//CRC of each state's 'positions' buffer sumed.
-		fwrite(&chsm_states, sizeof(uint32_t), 1, out);
+		bool doHeadersFor[N] = {};
+		nq_state_t* ptr = states;
+		for (; ptr < states + len; ++ptr)
+			doHeadersFor[ptr->curr_row] = 1;
 
-		return ferror(out);
-	}
-	return 1;
-}
+		fwrite(&en, sizeof(unsigned char), 1, stream);
+		fwrite(&locked_at_row, sizeof(unsigned char), 1, stream);
+		fwrite(&len, sizeof(uint64_t), 1, stream);
 
-//Assumes valid buffer with queens only up to locked row.
-int util_minified_read_nq_states_from_stream(FILE* const in, nq_state_t** states, uint64_t* len, unsigned char* locked_at_row) {
-	if (in) {
-		unsigned short version;
-		unsigned char en, locked_at;
-		uint32_t computed_chsm = 0, chsm;
-		uint64_t state_count;
-		fread(&version, sizeof(unsigned short), 1, in);
-		if (version != nq_minified_file_version)
-			return -1;
+		//Write subheader followed by data for each set of states.
+		UNROLL_LOOP(N);
+		for (char h = 0; h < N; ++h) {
+			if (doHeadersFor[h]) {
+				//Stop if error occured in previous write(s)
+				if (ferror(stream))
+					return ferror(stream);
 
-		fread(&en, sizeof(unsigned char), 1, in);
-		if (en != N)
-			return -2;
-
-		fread(&locked_at, sizeof(unsigned char), 1, in);
-		fread(&state_count, sizeof(uint64_t), 1, in);
-
-		unsigned char* temp_buffer = (unsigned char*)malloc(sizeof(unsigned char) * (locked_at + 1));
-		nq_state_t* state_buf = (nq_state_t*)malloc(sizeof(nq_state_t) * state_count);
-		if (!state_buf || !temp_buffer) {
-			if (state_buf)free(state_buf);
-			if (temp_buffer)free(temp_buffer);
-			return -4;
-		}
-		nq_state_t tmp_state = init_nq_state();
-
-
-		for (size_t i = 0; i < state_count; ++i) {
-			if (feof(in)) {
-				free(temp_buffer);
-				free(state_buf);
-				return -2;
+				//Write partial header
+				fwrite(&h, sizeof(char), 1, stream);
+				//We don't know the length yet, keep the position and come back after writing the states.
+				const long pos = ftell(stream);
+				fseek(stream, sizeof(uint64_t), SEEK_CUR);
+				uint64_t cnt = 0;
+				for (ptr = states; ptr < states + len; ++ptr) {
+					if (ptr->curr_row == h) {
+						++cnt;
+						fwrite(ptr->queen_at_index, sizeof(unsigned char), h, stream);
+					}
+				}
+				//Go back to header and write the count of states that follows.
+				fseek(stream, pos, SEEK_SET);
+				fwrite(&cnt, sizeof(uint64_t), 1, stream);
+				fseek(stream, 0, SEEK_END); //Go back to end of file.
 			}
-			fread(temp_buffer, sizeof(unsigned char), locked_at + 1, in);
-			for (unsigned j = 0; j < locked_at; ++j)
-				place_queen_at(&tmp_state, j, temp_buffer[j]);
-			tmp_state.curr_row = temp_buffer[locked_at];
-
-			memcpy(state_buf + i, &tmp_state, sizeof(nq_state_t));
-			clear_nq_state(&tmp_state);
-			computed_chsm += crc32_chsm(temp_buffer, sizeof(unsigned char), locked_at + 1);
 		}
-		free(temp_buffer);
-		fread(&chsm, sizeof(uint32_t), 1, in);
-		if (chsm != computed_chsm) {
-			free(state_buf);
-			return -3;
-		}
-		*states = state_buf;
-		*locked_at_row = locked_at;
-		*len = state_count;
-		return ferror(in);
+		return ferror(stream);
 	}
 	return 1;
 }
 
-int util_write_nq_state_buf_to_stream(FILE* const out, const nq_state_t* const states, const uint64_t len, const unsigned char locked_at_row) {
-	if (out) {
-		const unsigned char en = N;
-		const uint32_t chsm = crc32_chsm(states, sizeof(nq_state_t), len);
-		fwrite(&nq_file_version, sizeof(unsigned short), 1, out);
-		fwrite(&en, sizeof(unsigned char), 1, out);
-		fwrite(&locked_at_row, sizeof(unsigned char), 1, out);
-		uint8_t header[sizeof(unsigned short) + sizeof(unsigned char) + sizeof(unsigned char)];
-		*((unsigned short*)header) = nq_file_version;
-		*((unsigned char*)header + sizeof(unsigned short)) = en;
-		*((unsigned char*)header + sizeof(unsigned short) + sizeof(unsigned char)) = locked_at_row;
-		const uint32_t headersum = crc32_chsm(header, 1, sizeof(header));
-		fwrite(&headersum, sizeof(uint32_t), 1, out);
-
-		fwrite(&len, sizeof(uint64_t), 1, out);
-		fwrite(states, sizeof(nq_state_t), len, out);
-		fwrite(&chsm, sizeof(uint32_t), 1, out);
-		return ferror(out);
-	}
-	return 1;
-}
-
-int util_read_nq_state_buf_from_stream(FILE* const in, nq_state_t** states, uint64_t* len, unsigned char* locked_at_row) {
-	if (in) {
+int util_read_nq_states_from_stream(FILE* const stream, nq_state_t** states, uint64_t* len, unsigned char* const locked_at_row, bool skip_n_check) {
+	if (stream && len && states && locked_at_row) {
 		unsigned char en = 0;
-		unsigned short  version = 0;
-		const uint32_t sum = 0;
 
-		fread(&version, sizeof(unsigned short), 1, in);
-		if (version != nq_file_version)
-			return -1;
+		fread(&en, sizeof(unsigned char), 1, stream);
+		fread(locked_at_row, sizeof(unsigned char), 1, stream);
+		fread(len, sizeof(uint64_t), 1, stream);
 
-		fread(&en, sizeof(unsigned char), 1, in);
-		if (en != N)
-			return -2;
+		// Check N is correct
+		assert(skip_n_check || N == en);
 
-		fread(locked_at_row, sizeof(unsigned char), 1, in);
-
-		uint8_t header[sizeof(unsigned short) + sizeof(unsigned char) + sizeof(unsigned char)];
-		*((unsigned short*)header) = version;
-		*((unsigned char*)header + sizeof(unsigned short)) = N;
-		*((unsigned char*)header + sizeof(unsigned short) + sizeof(unsigned char)) = *locked_at_row;
-		fread((void*)&sum, sizeof(uint32_t), 1, in);
-		if (sum != crc32_chsm(header, 1, sizeof(header))) {
-			return -3;
-		}
-
-		fread(len, sizeof(uint64_t), 1, in);
 		*states = (nq_state_t*)malloc(sizeof(nq_state_t) * *len);
-		if (!*states)
-			return -4;
-		fread(*states, sizeof(nq_state_t), *len, in);
-		fread((void*)&sum, sizeof(uint32_t), 1, in);
-		if (sum != crc32_chsm(*states, sizeof(nq_state_t), *len)) {
-			free(*states);
-			return -5;
+		if (!*states) return -1;
+
+		nq_state_t* bpos = *states;
+		unsigned char tmp_buff[N];
+		while (1) {
+			//Read header
+			char curr_row=0;
+			uint64_t cnt=0;
+			fread(&curr_row, sizeof(unsigned char), 1, stream);
+			
+			//FEOF won't return true until we have read past the end of the file. Hence why infinite loop with abrupt break.
+			if (feof(stream))
+				break;
+			
+			fread(&cnt, sizeof(uint64_t), 1, stream);
+
+			//Make sure writing cnt many states to bpos won't push us out of bounds
+			assert(bpos + cnt <= ((*states) + *len));
+
+			//Either empty segment or segment non empty and we have stuff to read.
+			assert(!cnt || cnt > 0 && !feof(stream));
+
+			//Begin re-creating the states.
+			nq_state_t temp = init_nq_state();
+			temp.curr_row = curr_row;
+			for (uint64_t c = 0; c < cnt; ++c) {
+				clear_nq_state(&temp);
+				fread(tmp_buff, sizeof(unsigned char), curr_row, stream);
+				for (char i = 0; i < curr_row; ++i)
+					place_queen_at(&temp, i, tmp_buff[i]);
+				memcpy(bpos + c, &temp, sizeof(nq_state_t));
+			}
+			//Move to the next segment on the buffer
+			bpos += cnt;
 		}
-		return ferror(in);
+		return ferror(stream);
 	}
 	return 1;
 }
-
 
 uint32_t crc32_chsm(const void* const buf, const size_t element_size, const size_t element_count) {
 	const uint8_t* const b = (uint8_t*)buf;
