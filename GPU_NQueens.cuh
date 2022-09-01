@@ -17,6 +17,11 @@ __host__ mpz_t gpu_solver_driver(nq_state_t* const states, const uint_least32_t 
 __host__ nq_state_t* copy_states_to_gpu(const nq_state_t* const states, const uint64_t state_count, const gpu_config_t* const config);
 __host__ void copy_states_from_gpu(nq_state_t* host_states, nq_state_t* device_states, const uint64_t state_count, const gpu_config_t* const config);
 
+#ifdef USE_REGISTER_ONLY_KERNEL
+__global__ void kern_doitall_v2_regld(const nq_state_t* const __restrict__ states, const uint_least32_t state_cnt, unsigned* const __restrict__ sols);
+#else
+__global__ void kern_doitall_v2_smem(const nq_state_t* const __restrict__ states, const uint_least32_t state_cnt, unsigned* const __restrict__ sols);
+#endif
 //Inline helpers
 __device__ __forceinline__ unsigned block_reduce_sum_shfl_variwarp(register unsigned threads_val, unsigned int* __restrict__ smem) {
 	// Index of thread IN BLOCK

@@ -12,8 +12,13 @@
 // The minimum compute capability required. atomicAdd() is not available in less than 6 (600)
 #define MINIMUM_COMPUTE_CAPABILITY 600
 
+//If defined, will compile the solver kernel where each thread places most of its state in register space and operates on it there.
+//Requires knowledge that enough register space is available as there are no built in checks. On tested architectures, relatively low register pressure
+//was observed so this will likely be fine.
+#define USE_REGISTER_ONLY_KERNEL
+
 //The number N for the puzzle.
-#define N 16
+#define N 17
 
 // Number of kernel launches for a given input to run. This is to be used when timing the kernels only. 
 // Since results are not cleared or accumulated between runs, this may result in incorrect (inflated) results.
