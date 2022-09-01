@@ -173,9 +173,9 @@ int util_read_nq_states_from_stream(FILE* const stream, nq_state_t** states, uin
 
 			//Begin re-creating the states.
 			nq_state_t temp = init_nq_state();
-			temp.curr_row = curr_row;
 			for (uint64_t c = 0; c < cnt; ++c) {
 				clear_nq_state(&temp);
+				temp.curr_row = curr_row;
 				fread(tmp_buff, sizeof(unsigned char), curr_row, stream);
 				for (char i = 0; i < curr_row; ++i)
 					place_queen_at(&temp, i, tmp_buff[i]);
