@@ -109,7 +109,7 @@ __host__ nq_state_t init_nq_state(void);
 __host__ void clear_nq_state(nq_state_t* state);
 __host__ nq_state_t* nq_generate_states(const unsigned int how_many, uint64_t* const __restrict__ returned_count, unsigned* __restrict__ locked_row_end);
 __host__ bool locked_advance_nq_state(nq_state_t* __restrict__ s, const unsigned top_locked_row, const unsigned int lock);
-__host__ bool host_ucp_nq_state(nq_state_t* __restrict__ s);
+__host__ bool host_doublesweep_light_nq_state(nq_state_t* __restrict__ s);
 
 
 ///////////////////Inline queen placement/removal functions (host and device)
@@ -133,7 +133,7 @@ __host__ __device__ __forceinline__ void remove_queen_at(nq_state_t* __restrict_
 
 //////////////////Improved (inlined) device-only functions
 
-__device__ __inline__ void device_ucp_nq_state(nq_state_t* __restrict__ s) {
+__device__ __inline__ void device_doublesweep_light_nq_state(nq_state_t* __restrict__ s) {
 	while ((s->queen_at_index[s->curr_row] == UNSET_QUEEN_INDEX)) {
 		const bitset32_t free_cols = NQ_FREE_COLS(s);
 		const int POPCNT(free_cols, popcnt);

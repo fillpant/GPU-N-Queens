@@ -300,7 +300,7 @@ __host__ bool locked_advance_nq_state(nq_state_t* __restrict__ s, const unsigned
 }
 
 // NOTE: Assumes s is not an empty state!! There must be at least one queen on it.
-__host__ bool host_ucp_nq_state(nq_state_t* __restrict__ s) {
+__host__ bool host_doublesweep_light_nq_state(nq_state_t* __restrict__ s) {
 	bool changed = false;
 	do {
 		const unsigned char queen_index = s->queen_at_index[s->curr_row];
