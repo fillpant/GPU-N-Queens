@@ -75,22 +75,22 @@ __host__ mpz_t gpu_solver_driver(nq_state_t* const states, const uint_least32_t 
 		// Last device gets extra workload.
 		const unsigned states_per_device = (unsigned)floor(state_cnt / config_cnt) + (gpuc == config_cnt - 1 ? state_cnt % config_cnt : 0);
 		const unsigned padded_states_per_device = (states_per_device % 32 == 0 ? states_per_device : (states_per_device + (WARP_SIZE - states_per_device % WARP_SIZE)));
-		const unsigned block_cnt_ucp_adv = (unsigned)ceil(states_per_device / (double)COMPLETE_KERNEL_BLOCK_THREAD_COUNT);
+		const unsigned block_cnt_doublesweep_light_adv = (unsigned)ceil(states_per_device / (double)COMPLETE_KERNEL_BLOCK_THREAD_COUNT);
 
 		printf("Preparing device %u...\n", configs[gpuc].device_id);
 
 		nq_state_t* d_states;
 		unsigned* d_result;
 		CHECK_CUDA_ERROR(cudaMalloc(&d_states, sizeof(nq_state_t) * padded_states_per_device));
-		CHECK_CUDA_ERROR(cudaMalloc(&d_result, sizeof(unsigned) * block_cnt_ucp_adv));
+		CHECK_CUDA_ERROR(cudaMalloc(&d_result, sizeof(unsigned) * block_cnt_doublesweep_light_adv));
 		if (configs[gpuc].async) {
 			CHECK_CUDA_ERROR(cudaMemsetAsync(d_states, 0, sizeof(nq_state_t) * padded_states_per_device));
 			CHECK_CUDA_ERROR(cudaMemcpyAsync(d_states, states + (gpuc * states_per_device), sizeof(nq_state_t) * states_per_device, cudaMemcpyHostToDevice));
-			CHECK_CUDA_ERROR(cudaMemsetAsync(d_result, 0, sizeof(unsigned) * block_cnt_ucp_adv));//BLOCKCOUNT IS UNINITIALIZED!!!!!!!!!!!!!
+			CHECK_CUDA_ERROR(cudaMemsetAsync(d_result, 0, sizeof(unsigned) * block_cnt_doublesweep_light_adv));//BLOCKCOUNT IS UNINITIALIZED!!!!!!!!!!!!!
 		} else {
 			CHECK_CUDA_ERROR(cudaMemset(d_states, 0, sizeof(nq_state_t) * padded_states_per_device));
 			CHECK_CUDA_ERROR(cudaMemcpy(d_states, states + (gpuc * states_per_device), sizeof(nq_state_t) * states_per_device, cudaMemcpyHostToDevice));
-			CHECK_CUDA_ERROR(cudaMemset(d_result, 0, sizeof(unsigned) * block_cnt_ucp_adv));
+			CHECK_CUDA_ERROR(cudaMemset(d_result, 0, sizeof(unsigned) * block_cnt_doublesweep_light_adv));
 		}
 
 #ifndef __INTELLISENSE__ //Suppressing VS error...
@@ -100,7 +100,7 @@ __host__ mpz_t gpu_solver_driver(nq_state_t* const states, const uint_least32_t 
 		gdata[gpuc].d_statecnt = states_per_device;
 		gdata[gpuc].d_statecnt_padded = padded_states_per_device;
 		gdata[gpuc].d_results = d_result;
-		gdata[gpuc].block_count = block_cnt_ucp_adv;
+		gdata[gpuc].block_count = block_cnt_doublesweep_light_adv;
 	}
 
 	printf("Starting...\n");
@@ -178,12 +178,12 @@ __host__ mpz_t gpu_solver_driver(nq_state_t* const states, const uint_least32_t 
 		register unsigned t_sols = 0;
 
 		if (global_idx < state_cnt) {
-			unsigned char* l_smem = smem + local_idx * N;
+			unsigned char* const __restrict__ l_smem = smem + local_idx * N;
 			// Since we have relatively low register pressure (on tested architectures) we can make use of the spare registers as 'memory space' for each thread 
 			// instead of shared memory. Struct is broken down to components (hopefully) placed in registers as below:
 			register bitset32_t queens_in_columns = states[global_idx].queens_in_columns;
 			register uint64_t diagonal = states[global_idx].diagonals.diagonal, antidiagonal = states[global_idx].diagonals.antidiagonal;
-			register char curr_row = states[global_idx].curr_row;
+			register int curr_row = states[global_idx].curr_row;
 			//The queens at index array cannot be placed in a register (without a lot of effort and preprocessor 'hacks' that is) so it stays in smem.
 #pragma unroll
 			for (int i = 0; i < N; ++i)
@@ -192,23 +192,28 @@ __host__ mpz_t gpu_solver_driver(nq_state_t* const states, const uint_least32_t 
 			do {
 				int res = curr_row >= locked_row_end;
 				bool any_alive = __ballot_sync(0xFFFFFFFF, res);
-				if (!any_alive) break; // Whole warp finished
+				if (!any_alive)
+					break; // Whole warp finished
 				if (res) {
+					//NOTE: In an effort to speed 
+					// using 'find nth bit' (FNB) results in significantly poorer performance than conditionally shifting
 					//Advance the state
 					while (curr_row >= locked_row_end) {
-						const unsigned char queen_index = l_smem[curr_row];
+						const register unsigned queen_index = l_smem[curr_row];
 						bitset32_t free_cols = (~(queens_in_columns | dad_extract_explicit(diagonal, antidiagonal, curr_row)) & N_MASK);
 						if (queen_index != UNSET_QUEEN_INDEX) {
+							// Tried to change the logic to issue a single FNB (Find Nth Bit) instruction, depending on the position of the queen 
 							free_cols &= (N_MASK << (queen_index + 1));
 							queens_in_columns = bs_clear_bit(queens_in_columns, queen_index);
 							l_smem[curr_row] = UNSET_QUEEN_INDEX;
-							diagonal &= ~(((uint64_t)1U << queen_index) << curr_row);
-							antidiagonal &= ~(((uint64_t)1U << queen_index) << (64 - N - curr_row));
+							diagonal &= ~((1LLU << queen_index) << curr_row);
+							antidiagonal &= ~((1LLU << queen_index) << (64 - N - curr_row));
 						}
 						if (!free_cols) {
 							--curr_row;
 						} else {
-							const unsigned col = __ffs(free_cols) - 1;
+							//direct ffs is okay here, free_cols will have at least one set bit.
+							const unsigned col = intrin_ffs_nosub(free_cols);
 							queens_in_columns = bs_set_bit(queens_in_columns, col);
 							l_smem[curr_row] = col;
 							diagonal |= ((uint64_t)1U << col) << curr_row;
@@ -223,7 +228,6 @@ __host__ mpz_t gpu_solver_driver(nq_state_t* const states, const uint_least32_t 
 				__syncwarp();
 
 				if (res) {
-					//Perform UCP
 					while (l_smem[curr_row] == UNSET_QUEEN_INDEX) {
 						const bitset32_t free_cols = (~(queens_in_columns | dad_extract_explicit(diagonal, antidiagonal, curr_row)) & N_MASK);
 						const int POPCNT(free_cols, popcnt);
@@ -278,8 +282,8 @@ __host__ mpz_t gpu_solver_driver(nq_state_t* const states, const uint_least32_t 
 				if (!any_alive) // Whole warp finished
 					break;
 				if (res) device_advance_nq_state(&smem[local_idx], locked_row_end);
-				__syncwarp(); // Threads made to converge before ucp
-				if (res)	device_ucp_nq_state(&smem[local_idx]);
+				__syncwarp(); // Threads made to converge before doublesweep_light
+				if (res)	device_doublesweep_light_nq_state(&smem[local_idx]);
 				//__syncwarp(); // Threads made to converge before the following line
 				t_sols += (smem[local_idx].queens_in_columns == N_MASK);//Non divergent
 			//}
