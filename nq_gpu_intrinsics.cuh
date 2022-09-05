@@ -13,8 +13,11 @@
 #define asm(...) printf("ASM override -- You shouldn't be seeing this");
 #endif
 
-//PTX intrinsics. 
-//Requires sm_20+
+//PTX intrinsics.
+// +------------------------------+
+// |      SM_20 + intrinsics      |
+// |                              |
+// +------------------------------+
 __device__ __forceinline__ unsigned int intrin_bit_field_extract_u32(unsigned bits, unsigned from, unsigned cnt) {
 	unsigned res;
 	asm("bfe.u32 %0, %1, %2, %3;" : "=r"(res) : "r"(bits), "r"(from), "r"(cnt));
@@ -39,6 +42,15 @@ __device__ __forceinline__ unsigned long long intrin_bit_field_insert_b64(unsign
 	return res;
 }
 
+// The intrinsic __ffs performs the following two instructions but manipulates the result to be off by 1, which then needs to be countered by subtracting 1. Sometimes, this
+// operation does not get optimised out by the compiler. This function does not suffer from the problem, provided some bit is set. If no bit is set, 0xFFFFFFFF is retruend.
+__device__ __forceinline__ unsigned intrin_ffs_nosub(unsigned of) {
+	unsigned res = 1;
+	asm("brev.b32 %0, %1;" : "=r"(res) : "r"(of));
+	asm("bfind.shiftamt.u32 %0, %1;" : "=r"(res) : "r"(res));
+	return res;
+}
+
 // Find the ammount of left shifts needed to put the most significant set bit at the most significant position
 // i.e in 0b00000000000000000000000000000001 the result is 31, since 31 left shifts move the set bit to the top.
 // in 0b00000000000000000000000000010001 the result is 27, since then the most significant set bit  is at the top.
@@ -57,6 +69,27 @@ __device__ __forceinline__ unsigned intrin_find_leading_one_u32(unsigned of) {
 	asm("bfind.u32 %0, %1;" : "=r"(res) : "r"(of));
 	return res;
 }
+
+// +------------------------------+
+// |      SM_30 + intrinsics      |
+// |                              |
+// +------------------------------+
+
+// WARNING: If base is >31 this results in  undefined behaviour.
+// Find the nth bit in mask that is a 1, starting from base.
+// If n is positive, then the search starts from base and moves up to the most significant bit. 
+// If n is negative, then the search goes from base towards the least significant bit.
+// Returns the position of the nth bit from base that is a 1.
+// For example, in 0111101011 with base=2 and n=3, the search will start on the 2nd bit (0) and move to the left
+// until it hits the 3rd bit that is a 1, which in this case is index 6.
+// Second exmaple, in mask 110011101010101011 with base=8 and n=-2 the returned index is 5 since the 2nd set bit 
+// to the right of base is at 5. 
+__device__ __forceinline__ unsigned intrin_find_nth_set(unsigned mask, unsigned base, unsigned n) {
+	unsigned res;
+	asm("fns.b32 %0, %1, %2, %3;" : "=r"(res) : "r"(mask), "r"(base), "r"(n));
+	return res;
+}
+
 
 // +------------------------------+
 // |      SM_70 + intrinsics      |
