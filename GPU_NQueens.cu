@@ -79,19 +79,20 @@ __host__ mpz_t gpu_solver_driver(nq_state_t* const states, const uint_least32_t 
 
 		printf("Preparing device %u...\n", configs[gpuc].device_id);
 
-		nq_state_t* d_states;
-		unsigned* d_result;
+		nq_state_t* d_states = 0, * tmp_states = states;
+		unsigned* d_result = 0;
 		CHECK_CUDA_ERROR(cudaMalloc(&d_states, sizeof(nq_state_t) * padded_states_per_device));
 		CHECK_CUDA_ERROR(cudaMalloc(&d_result, sizeof(unsigned) * block_cnt_doublesweep_light_adv));
 		if (configs[gpuc].async) {
 			CHECK_CUDA_ERROR(cudaMemsetAsync(d_states, 0, sizeof(nq_state_t) * padded_states_per_device));
-			CHECK_CUDA_ERROR(cudaMemcpyAsync(d_states, states + (gpuc * states_per_device), sizeof(nq_state_t) * states_per_device, cudaMemcpyHostToDevice));
-			CHECK_CUDA_ERROR(cudaMemsetAsync(d_result, 0, sizeof(unsigned) * block_cnt_doublesweep_light_adv));//BLOCKCOUNT IS UNINITIALIZED!!!!!!!!!!!!!
+			CHECK_CUDA_ERROR(cudaMemcpyAsync(d_states, tmp_states, sizeof(nq_state_t) * states_per_device, cudaMemcpyHostToDevice));
+			CHECK_CUDA_ERROR(cudaMemsetAsync(d_result, 0, sizeof(unsigned) * block_cnt_doublesweep_light_adv));
 		} else {
 			CHECK_CUDA_ERROR(cudaMemset(d_states, 0, sizeof(nq_state_t) * padded_states_per_device));
-			CHECK_CUDA_ERROR(cudaMemcpy(d_states, states + (gpuc * states_per_device), sizeof(nq_state_t) * states_per_device, cudaMemcpyHostToDevice));
+			CHECK_CUDA_ERROR(cudaMemcpy(d_states, tmp_states, sizeof(nq_state_t) * states_per_device, cudaMemcpyHostToDevice));
 			CHECK_CUDA_ERROR(cudaMemset(d_result, 0, sizeof(unsigned) * block_cnt_doublesweep_light_adv));
 		}
+		tmp_states += states_per_device;
 
 #ifndef __INTELLISENSE__ //Suppressing VS error...
 		CHECK_CUDA_ERROR(cudaMemcpyToSymbol(locked_row_end, &row_locked, sizeof(unsigned)));
@@ -171,9 +172,9 @@ __host__ mpz_t gpu_solver_driver(nq_state_t* const states, const uint_least32_t 
 
 
 
-	__global__ void kern_doitall_v2_regld(const nq_state_t* const __restrict__ states, const uint_least32_t state_cnt, unsigned* const __restrict__ sols) {
-		const uint_least32_t local_idx = threadIdx.x;
-		const uint_least32_t global_idx = blockIdx.x * blockDim.x + local_idx;
+	__global__ void kern_doitall_v2_regld(const nq_state_t* const __restrict__ states, const unsigned state_cnt, unsigned* const __restrict__ sols) {
+		const unsigned local_idx = threadIdx.x;
+		const unsigned global_idx = blockIdx.x * blockDim.x + local_idx;
 		__shared__ unsigned char smem[COMPLETE_KERNEL_BLOCK_THREAD_COUNT * N + sizeof(unsigned int) * WARP_SIZE];
 		register unsigned t_sols = 0;
 
@@ -191,8 +192,7 @@ __host__ mpz_t gpu_solver_driver(nq_state_t* const states, const uint_least32_t 
 
 			do {
 				int res = curr_row >= locked_row_end;
-				bool any_alive = __ballot_sync(0xFFFFFFFF, res);
-				if (!any_alive)
+				if (!__ballot_sync(0xFFFFFFFF, res))
 					break; // Whole warp finished
 				if (res) {
 					//NOTE: In an effort to speed 
