@@ -65,6 +65,8 @@ __host__ mpz_t gpu_solver_driver(nq_state_t* const states, const uint_least32_t 
 
 	gpudata_t* gdata = (gpudata_t*)calloc(config_cnt, sizeof(gpudata_t));
 
+	nq_state_t* tmp_states = states;
+
 	// Prepare and launch on each gpu. 
 	for (unsigned gpuc = 0; gpuc < config_cnt; ++gpuc) {
 		CHECK_CUDA_ERROR(cudaSetDevice(configs[gpuc].device_id));
@@ -79,7 +81,7 @@ __host__ mpz_t gpu_solver_driver(nq_state_t* const states, const uint_least32_t 
 
 		printf("Preparing device %u...\n", configs[gpuc].device_id);
 
-		nq_state_t* d_states = 0, * tmp_states = states;
+		nq_state_t* d_states = 0;
 		unsigned* d_result = 0;
 		CHECK_CUDA_ERROR(cudaMalloc(&d_states, sizeof(nq_state_t) * padded_states_per_device));
 		CHECK_CUDA_ERROR(cudaMalloc(&d_result, sizeof(unsigned) * block_cnt_doublesweep_light_adv));
