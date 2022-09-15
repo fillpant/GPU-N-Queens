@@ -103,7 +103,7 @@
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
       <PreprocessorDefinitions>WIN32;WIN64;_DEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(SolutionDir)libs\pthreads;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)libs\pthreads;$(SolutionDir)libs\cargs;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -146,7 +146,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>WIN32;WIN64;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(SolutionDir)libs\pthreads;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)libs\pthreads;$(SolutionDir)libs\cargs;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -225,6 +225,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <CudaCompile Include="GPU_NQueens.cu" />
+    <CudaCompile Include="NQ_solver.cu" />
     <CudaCompile Include="nq_utils.cu" />
     <CudaCompile Include="n_queens.cu" />
     <CudaCompile Include="test.cu" />
@@ -234,7 +235,6 @@
     <ClInclude Include="deffinitions.cuh" />
     <ClInclude Include="diagonals.cuh" />
     <ClInclude Include="GPU_NQueens.cuh" />
-    <ClInclude Include="imath.h" />
     <ClInclude Include="intelisense_cuda_intrinsics.h" />
     <ClInclude Include="nq_gpu_intrinsics.cuh" />
     <ClInclude Include="n_queens.cuh" />
@@ -245,7 +245,7 @@
     <ResourceCompile Include="NQueens-V2.rc" />
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="imath.c" />
+    <ClCompile Include="libs\cargs\cargs.c" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
