@@ -143,9 +143,7 @@ loopend:
 		if (tmp.thread_data[i].result_ptr)
 			free(tmp.thread_data[i].result_ptr);
 
-	//'Pour' the states to a pinned memory buffer of the right size.
-	nq_state_t* states = NULL;
-	CHECK_CUDA_ERROR(cudaMallocHost(&states, sizeof(nq_state_t) * actual.total_len));
+	nq_state_t* states = (nq_state_t*) malloc(sizeof(nq_state_t) * actual.total_len);
 
 	uint64_t offset = 0;
 	for (unsigned i = 0; i < N; ++i) {
