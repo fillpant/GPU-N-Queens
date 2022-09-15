@@ -6,7 +6,6 @@
 #include <cuda_runtime_api.h>
 #include <string.h>
 #include <math.h>
-#include "imath.h"
 #include "n_queens.cuh"
 #include "assert.h"
 #include "nq_utils.cuh"
@@ -47,7 +46,7 @@ static bool check_gpu_compatibility(unsigned id, size_t size_of_states) {
 	return true;
 }
 
-__host__ mpz_t gpu_solver_driver(nq_state_t* const states, const uint_least32_t state_cnt, const unsigned row_locked, const gpu_config_t* const configs, const unsigned config_cnt) {
+__host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32_t state_cnt, const unsigned row_locked, const gpu_config_t* const configs, const unsigned config_cnt) {
 	FAIL_IF(!states);
 	FAIL_IF(state_cnt == 0);
 	FAIL_IF(!configs);
@@ -107,8 +106,7 @@ __host__ mpz_t gpu_solver_driver(nq_state_t* const states, const uint_least32_t 
 	}
 
 	printf("Starting...\n");
-	mpz_t result;
-	mp_int_init(&result);
+	uint64_t result;
 	cudaEvent_t ev = util_start_cuda_timer();
 	unsigned max_blocks = 0;
 
@@ -158,14 +156,11 @@ __host__ mpz_t gpu_solver_driver(nq_state_t* const states, const uint_least32_t 
 			CHECK_CUDA_ERROR(cudaSetDevice(configs[gpuc].device_id));
 			CHECK_CUDA_ERROR(cudaMemcpy(per_block_results, gdata[gpuc].d_results, sizeof(unsigned) * gdata[gpuc].block_count, cudaMemcpyDeviceToHost));
 			for (unsigned a = 0; a < gdata[gpuc].block_count; ++a)
-				mp_int_add_value(&result, per_block_results[a], &result);
+				result += per_block_results[a];
 			CHECK_CUDA_ERROR(cudaFree(gdata[gpuc].d_states));
 			CHECK_CUDA_ERROR(cudaFree(gdata[gpuc].d_results));
 		}
 		CHECK_CUDA_ERROR(cudaFreeHost(per_block_results));
-		char res[1024];
-		mp_int_to_string(&result, 10, res, 1024);
-		printf("Result: %s\n", res);
 		return result;
 #endif
 }

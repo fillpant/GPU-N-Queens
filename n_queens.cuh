@@ -46,7 +46,7 @@ typedef unsigned long bit_index_t;
 #define FFS(i,res)   res = (_BitScanForward64(&res,i)   ? (res + 1) : 0)
 #elif defined(__GNUC__)
 #warning "Untested builtin intrinsics!"
-#define UNROLL_LOOP(i) _Pragma("GCC unroll " #i)
+#define UNROLL_LOOP(i) //_Pragma("GCC unroll " #i)
 typedef int bit_index_t;
 #define CLZLL(i,res) res = __clzll(i)
 #define CLZ(i,res)   res = __clz(i)	

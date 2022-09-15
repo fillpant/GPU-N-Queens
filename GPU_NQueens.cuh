@@ -3,7 +3,6 @@
 #include "n_queens.cuh"
 #include "driver_types.h"
 #include "inttypes.h"
-#include "imath.h"
 #include "nq_gpu_intrinsics.cuh"
 
 
@@ -13,7 +12,7 @@ typedef struct {
 	bool async;
 } gpu_config_t;
 
-__host__ mpz_t gpu_solver_driver(nq_state_t* const states, const uint_least32_t state_cnt, const unsigned locked_row_end, const gpu_config_t* const configs, const unsigned config_cnt);
+__host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32_t state_cnt, const unsigned locked_row_end, const gpu_config_t* const configs, const unsigned config_cnt);
 __host__ nq_state_t* copy_states_to_gpu(const nq_state_t* const states, const uint64_t state_count, const gpu_config_t* const config);
 __host__ void copy_states_from_gpu(nq_state_t* host_states, nq_state_t* device_states, const uint64_t state_count, const gpu_config_t* const config);
 
