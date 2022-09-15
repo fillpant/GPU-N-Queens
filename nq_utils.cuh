@@ -35,7 +35,7 @@ inline uint64_t util_curr_time_ns(void) {
 
 int util_write_nq_states_to_stream(FILE* const stream, nq_state_t* states, uint64_t len, const unsigned char locked_at_row);
 int util_read_nq_states_from_stream(FILE* const stream, nq_state_t** states, uint64_t* len, unsigned char* const locked_at_row, bool skip_n_check);
-
+void* util_copy_to_pinned_mem(void* data, size_t element_size, size_t element_count);
 uint32_t crc32_chsm(const void* const buf, const size_t element_size, const size_t element_count);
 bitset32_t util_validate_state_buffer(nq_state_t* const buf, const uint64_t buf_len, const unsigned lock_at_row);
 char* util_size_to_human_readable(size_t siz);

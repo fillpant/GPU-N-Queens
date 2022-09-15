@@ -18,11 +18,11 @@
 #define USE_REGISTER_ONLY_KERNEL
 
 //The number N for the puzzle.
-#define N 17
+#define N 18
 
 // Number of kernel launches for a given input to run. This is to be used when timing the kernels only. 
 // Since results are not cleared or accumulated between runs, this may result in incorrect (inflated) results.
-//#define PROFILING_ROUNDS 50
+//#define PROFILING_ROUNDS 10
 
 //The first N nsb's set. 
 #define N_MASK ((1U<<N)-1U)
@@ -63,9 +63,6 @@
 // and will be resized as needed in a linear fashion, in increments of this many elements (i.e. after the first resize it will be X+X many 
 // elements big where X is this constant.)
 #define STATE_GENERATION_POOL_COUNT 262144
-
-// If using the kernel-driven solver, probe the GPU for results every X many runs of the kernels.
-#define READ_SUMMARY_FROM_GPU_EVERY_RUNS 5000
 
 #define CEILING(x,y) (((x) + (y) - 1) / (y)) // ty: https://stackoverflow.com/q/11363304
 
@@ -112,4 +109,21 @@
 								 } \
 								}
 
+#endif
+
+
+//File info (max path length, file separator, etc.)
+#ifdef __linux__
+#include <linux/limits.h>
+#define FILE_SEPARATOR "/"
+#define  MAX_PATH PATH_MAX
+// sprintf_s is C11 or VS. in Linux snprintf works the same way 
+#define sprintf_s snprintf
+#elif defined(_WIN32)
+//Using windows.h which defines this would be much better, but the fact we have N defined here conflicts with that header
+//hence this is a 'hack' for now...
+#define MAX_PATH 260
+#define FILE_SEPARATOR "\\"
+#else
+#error "Unable to determine max file path length for the target system!";
 #endif
