@@ -152,7 +152,6 @@ static uint64_t solve(nq_state_t* const states, const uint64_t len, const unsign
 	sprintf(res, "%" PRIu64, result);
 	char* formatted_res = util_large_integer_string_decimal_sep(res);
 	printf("solution_count(%u) = %s (%s)\n", N, res, formatted_res);
-	free(res);
 	free(formatted_res);
 	CHECK_CUDA_ERROR(cudaFreeHost(pinned));
 }
