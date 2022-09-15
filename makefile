@@ -24,7 +24,7 @@ SRC_PATH := .
 
 TARGET_NAME := nqueens
 TARGET := $(BIN_DIR)/$(TARGET_NAME)
-SRC := $(foreach x, $(SRC_PATH), $(wildcard $(addprefix $(x)/*,.c*)))
+SRC := $(foreach x, $(SRC_PATH), $(wildcard $(addprefix $(x)/*,.cu))) $(foreach x, $(SRC_PATH), $(wildcard $(addprefix $(x)/*,.c)))
 
 default: fullcompile
 
