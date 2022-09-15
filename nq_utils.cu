@@ -80,6 +80,15 @@ char* util_large_integer_string_decimal_sep(char* num) {
 	return ret;
 }
 
+// Allocates space in pinned memory via cudaMallocHost, and copies the specified element count to it.
+// The original buffer is not free'd
+void* util_copy_to_pinned_mem(void* data, size_t element_size, size_t element_count) {
+	void* p;
+	CHECK_CUDA_ERROR(cudaMallocHost(&p, element_size * element_count));
+	memcpy(p, data, element_size * element_count);
+	return p;
+}
+
 //File format:
 //1 byte: N
 //1 byte: Locked row
@@ -148,21 +157,21 @@ int util_read_nq_states_from_stream(FILE* const stream, nq_state_t** states, uin
 		// Check N is correct
 		assert(skip_n_check || N == en);
 
-		*states = (nq_state_t*)malloc(sizeof(nq_state_t) * *len);
+		*states = (nq_state_t*)malloc(sizeof(nq_state_t) * (*len));
 		if (!*states) return -1;
 
 		nq_state_t* bpos = *states;
 		unsigned char tmp_buff[N];
 		while (1) {
 			//Read header
-			char curr_row=0;
-			uint64_t cnt=0;
+			char curr_row = 0;
+			uint64_t cnt = 0;
 			fread(&curr_row, sizeof(unsigned char), 1, stream);
-			
+
 			//FEOF won't return true until we have read past the end of the file. Hence why infinite loop with abrupt break.
 			if (feof(stream))
 				break;
-			
+
 			fread(&cnt, sizeof(uint64_t), 1, stream);
 
 			//Make sure writing cnt many states to bpos won't push us out of bounds
@@ -371,13 +380,11 @@ __host__ __device__ void util_bits_to_buf(unsigned long long num, unsigned bits,
 }
 
 __host__ bool util_nq_states_equal(nq_state_t* one, nq_state_t* two) {
-	union nq_data {
-		nq_state_t* state;
-		char* bytes;
-	};
-	union nq_data a = { one };
-	union nq_data b = { two };
-	//byte-for-byte equality
-	return !strncmp(a.bytes, b.bytes, sizeof(nq_state_t));
+	return one->curr_row == two->curr_row 
+		&& one->diagonals.diagonal == two->diagonals.diagonal 
+		&& one->diagonals.antidiagonal == two->diagonals.antidiagonal 
+		&& one->queens_in_columns == two->queens_in_columns 
+		&& !memcmp(one->queen_at_index, two->queen_at_index, sizeof(one->queen_at_index));
 }
+
 
