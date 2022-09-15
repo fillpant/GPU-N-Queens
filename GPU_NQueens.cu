@@ -106,7 +106,7 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 	}
 
 	printf("Starting...\n");
-	uint64_t result;
+	uint64_t result = 0;
 	cudaEvent_t ev = util_start_cuda_timer();
 	unsigned max_blocks = 0;
 
