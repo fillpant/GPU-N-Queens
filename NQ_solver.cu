@@ -19,7 +19,11 @@ static cag_opt_t opts[] = {
 	{'w',"wW","write-states","file/dir","Write the generated states to the given file. This must be a directory if -s is specified, or a file otherwise."},
 	//-s --split-pool
 	{'s',"sS","split-states","count","Split generated states into multiple files, prefixed with X_ where X is an integer in range [0,count)"},
-	//-sff --states-from-file <file>
+	//-m --mix-states 
+	{'m',"mM","mix-states",NULL,"Shuffle the state buffer using a random seed. This option applies both to state loading and state generation."},
+	//-r --rand-seed
+	{'r',"rR","random-seed","seed","Use this seed to initialize random."},
+	//-l --load-states <file>
 	{'l',"lL","load-states","file", "Load states from the given file, instead of generating a new pool"},
 	//-h/-H/-? --help 
 	{'h',"?hH","help",NULL,"Show help options"},
@@ -28,7 +32,23 @@ static cag_opt_t opts[] = {
 };
 
 
-static int generate_states_to_files(long long int state_count, const char* file_out, int file_chunks) {
+static void shuffle_states(nq_state_t* const states, const uint64_t len) {
+	union { int16_t arr[]; uint64_t rval; } r;
+	nq_state_t tmp;
+	for (uint64_t i = 0; i < len - 2; ++i) {
+		r.arr[0] = rand();
+		r.arr[1] = rand();
+		r.arr[2] = rand();
+		r.arr[3] = rand();
+		r.rval = ((r.rval % len) + i) % len;
+		if (r.rval == i) continue;
+		memcpy(&tmp, states + i, sizeof(nq_state_t));
+		memmove(states + i, states + r.rval, sizeof(nq_state_t));
+		memcpy(states + r.rval, &tmp, sizeof(nq_state_t));
+	}
+}
+
+static int generate_states_to_files(long long int state_count, const char* file_out, int file_chunks, bool shuffle) {
 	uint64_t actual_cnt;
 	unsigned locked_row;
 	nq_state_t* buf = nq_generate_states(state_count, &actual_cnt, &locked_row);
@@ -36,6 +56,9 @@ static int generate_states_to_files(long long int state_count, const char* file_
 		fprintf(stderr, "Failed to generate states!");
 		return EXIT_FAILURE;
 	}
+
+	if (shuffle)
+		shuffle_states(buf, actual_cnt);
 
 	printf("Generated %" PRIu64" states by locking at row %u\n", actual_cnt, locked_row);
 	if (file_chunks) {
@@ -50,7 +73,7 @@ static int generate_states_to_files(long long int state_count, const char* file_
 		printf("Writing approx. %llu states per file across %d chunk files in %s...\n", (unsigned long long) per_chunk, file_chunks, file_out);
 
 		char fpath_buf[MAX_PATH + 1];
-		uint64_t written=0;
+		uint64_t written = 0;
 		for (int i = 0; i < file_chunks; ++i) {
 			if (!sprintf_s(fpath_buf, sizeof(fpath_buf), "%s" FILE_SEPARATOR"chunk_%d_for_n%u_cnt_%llu.nqsf", file_out, i, N, per_chunk)) {
 				fprintf(stderr, "Failed to construct chunk file path. Max file path length exceeded!");
@@ -101,7 +124,7 @@ static int parse_gpu_configs(const char* const to_parse, gpu_config_t** const co
 	if (!confs)
 		return 1;
 
-	char tmp_parse[20]; 
+	char tmp_parse[20];
 	const char* end = to_parse;
 	str = to_parse;
 	for (int cidx = 0;; ++end) {
@@ -114,10 +137,10 @@ static int parse_gpu_configs(const char* const to_parse, gpu_config_t** const co
 					free(confs);
 					return errno;
 				}
-				if (id > UINT_MAX) 
+				if (id > UINT_MAX)
 					return 3;
 				confs[cidx++].device_id = id;
-				str = end+1;
+				str = end + 1;
 			} else
 				return 2;
 		}
@@ -133,9 +156,9 @@ static int get_all_gpus(gpu_config_t** const configs, unsigned* gpu_config_count
 	CHECK_CUDA_ERROR(cudaGetDeviceCount(&cnt));
 	*configs = (gpu_config_t*)calloc(cnt, sizeof(gpu_config_t));
 	if (!*configs) return 1;
-	*gpu_config_count = (unsigned) cnt;
+	*gpu_config_count = (unsigned)cnt;
 	for (--cnt; cnt >= 0; --cnt)
-		(* configs)[cnt].device_id = cnt;
+		(*configs)[cnt].device_id = cnt;
 	//todo asybc flag
 	return 0;
 }
@@ -146,8 +169,9 @@ static uint64_t solve(nq_state_t* const states, const uint64_t len, const unsign
 	FAIL_IF(len > UINT_MAX);
 	FAIL_IF(!configs && get_all_gpus(&configs, &gpu_config_count));
 
+	printf("Solving...\n");
 	uint64_t result = gpu_solver_driver(pinned, (uint_least32_t)len, lock_at_row, configs, gpu_config_count);
-	
+
 	char res[32] = {};
 	sprintf(res, "%" PRIu64, result);
 	char* formatted_res = util_large_integer_string_decimal_sep(res);
@@ -155,6 +179,8 @@ static uint64_t solve(nq_state_t* const states, const uint64_t len, const unsign
 	free(formatted_res);
 	CHECK_CUDA_ERROR(cudaFreeHost(pinned));
 }
+
+
 
 int main(int argc, char** argv) {
 
@@ -186,6 +212,7 @@ int main(int argc, char** argv) {
 	int state_split_count = 0;
 	gpu_config_t* gpu_configs = NULL;
 	unsigned gpu_conf_size = 0;
+	bool shuffle = 0;
 #ifndef PROFILING_ROUNDS
 	cag_option_prepare(&ctxt, opts, CAG_ARRAY_SIZE(opts), argc, argv);
 	while (cag_option_fetch(&ctxt)) {
@@ -193,6 +220,12 @@ int main(int argc, char** argv) {
 		long long res;
 		char optn = cag_option_get(&ctxt);
 		switch (optn) {
+		case 'r':
+			val = cag_option_get_value(&ctxt);
+			res = strtol(val, NULL, 10);
+			FAIL_IF(res > UINT_MAX || res < 0);
+			srand((unsigned int)res);
+			break;
 		case 'g':
 			val = cag_option_get_value(&ctxt);
 			res = strtoll(val, NULL, 10);
@@ -219,6 +252,9 @@ int main(int argc, char** argv) {
 		case 'l':
 			input_states_file = cag_option_get_value(&ctxt);
 			break;
+		case 'm':
+			shuffle = 1;
+			break;
 		case 'h':
 			printf("Usage: %s <option 1> <option 2> ...\n", argv[0]);
 			printf("Note: Windows style flags (/) will not parse!\n");
@@ -239,7 +275,7 @@ int main(int argc, char** argv) {
 
 	}
 
-	printf("Compiled for N=%u\n", N);
+	printf("\nCompiled for N=%u\n", N);
 #ifdef NQ_ENABLE_EXPERIMENTAL_OPTIMISATIONS
 	printf("\tExperimental optimizations are enabled!\n");
 #endif
@@ -263,7 +299,7 @@ int main(int argc, char** argv) {
 			return EXIT_FAILURE;
 		}
 		printf("Starting state generation for up to %lld states. Writing to: %s.\n", state_count, gen_states_file);
-		generate_states_to_files(state_count, gen_states_file, state_split_count);
+		generate_states_to_files(state_count, gen_states_file, state_split_count,shuffle);
 	} else if (input_states_file) { // Read states from file and solve
 		printf("Loading states from file...\n");
 		FILE* in = fopen(input_states_file, "rb");
@@ -281,6 +317,10 @@ int main(int argc, char** argv) {
 		}
 		printf("Loaded %" PRIu64" states\n", len);
 		fclose(in);
+		if (shuffle) {
+			printf("Shuffling loaded states...\n");
+			shuffle_states(sbuf, len);
+		}
 		solve(sbuf, len, lock_at, gpu_configs, gpu_conf_size);
 	} else { // Just solve without reading from file
 #endif
@@ -296,7 +336,7 @@ int main(int argc, char** argv) {
 #ifndef PROFILING_ROUNDS
 	}
 #endif
-	if (gpu_configs) 
+	if (gpu_configs)
 		free(gpu_configs);
 	return EXIT_SUCCESS;
 }
