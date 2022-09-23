@@ -94,7 +94,12 @@ inline uint64_t bit_reverse_lut_64(const uint64_t i) {
 }
 #endif
 
-typedef struct __align__(8) {
+
+typedef struct 
+#ifndef MEM_SAVING_STATES
+	__align__(8) 
+#endif
+{
 	//Bitset where 1 means queen in that column and 0 means no queen
 	bitset32_t queens_in_columns;
 	//Current diagonals of board

@@ -299,7 +299,7 @@ int main(int argc, char** argv) {
 			return EXIT_FAILURE;
 		}
 		printf("Starting state generation for up to %lld states. Writing to: %s.\n", state_count, gen_states_file);
-		generate_states_to_files(state_count, gen_states_file, state_split_count,shuffle);
+		generate_states_to_files(state_count, gen_states_file, state_split_count, shuffle);
 	} else if (input_states_file) { // Read states from file and solve
 		printf("Loading states from file...\n");
 		FILE* in = fopen(input_states_file, "rb");

@@ -78,7 +78,7 @@ static void* internal_gen_states_rowlocked_thread(void* datptr) {
 static nq_state_t* gen_states_threaded(const unsigned int how_many, uint64_t* const __restrict__ returned_count, unsigned* __restrict__ locked_row_end) {
 	FAIL_IF(!returned_count);
 	const uint64_t absolute_max_states = (uint64_t)((uint64_t)how_many * (1 + STATE_GENERATION_LIMIT_PLAY_FACTOR));
-	unsigned int lock_at_row = (unsigned int)(log(how_many) / log(N));
+	unsigned int lock_at_row = (unsigned int)(log(how_many) / log(n));
 	lock_at_row = lock_at_row >= N ? N - 1 : lock_at_row;
 	FAIL_IF(!lock_at_row);
 
@@ -143,7 +143,7 @@ loopend:
 		if (tmp.thread_data[i].result_ptr)
 			free(tmp.thread_data[i].result_ptr);
 
-	nq_state_t* states = (nq_state_t*) malloc(sizeof(nq_state_t) * actual.total_len);
+	nq_state_t* states = (nq_state_t*)malloc(sizeof(nq_state_t) * actual.total_len);
 
 	uint64_t offset = 0;
 	for (unsigned i = 0; i < N; ++i) {

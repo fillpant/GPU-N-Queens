@@ -18,7 +18,7 @@
 #define USE_REGISTER_ONLY_KERNEL
 
 //The number N for the puzzle.
-#define N 18
+#define N 25
 
 // Number of kernel launches for a given input to run. This is to be used when timing the kernels only. 
 // Since results are not cleared or accumulated between runs, this may result in incorrect (inflated) results.
@@ -52,6 +52,9 @@
 //Number of warps in each block. 
 #define WARPS_PER_BLOCK 32
 
+//If defined, states won't be aligned to any specific value (in the interest of memory saving, may help)
+#define MEM_SAVING_STATES
+
 //When using the single 'do it all' kernel, blocks are 1-dimensional. The size of the block impacts shared memory allocation. THIS VALUE MUST BE DIVISIBLE BY 32!
 //Shared memory requirements are this many nq_state_t's plus 32 unsigned ints (aligned) per block. The size of nq_state_t varies depending on N.
 //A stable definition was the bellow which acomodates all N up to 31, but produces smaller-than-possible blocks for smaller N. This in itself is no problem, and even desirable in some devices
@@ -62,7 +65,7 @@
 //Number of nq_state_t's in the initial buffer used for state generation. Pool will initially contain this many elements
 // and will be resized as needed in a linear fashion, in increments of this many elements (i.e. after the first resize it will be X+X many 
 // elements big where X is this constant.)
-#define STATE_GENERATION_POOL_COUNT 262144
+#define STATE_GENERATION_POOL_COUNT 4194304
 
 #define CEILING(x,y) (((x) + (y) - 1) / (y)) // ty: https://stackoverflow.com/q/11363304
 
