@@ -33,7 +33,8 @@ static cag_opt_t opts[] = {
 
 
 static void shuffle_states(nq_state_t* const states, const uint64_t len) {
-	union { int16_t arr[]; uint64_t rval; } r;
+	//Flexible type in union is non-standard for C99/C11
+	union { uint64_t rval; int16_t arr[4];  } r;
 	nq_state_t tmp;
 	for (uint64_t i = 0; i < len - 2; ++i) {
 		r.arr[0] = rand();
@@ -51,7 +52,8 @@ static void shuffle_states(nq_state_t* const states, const uint64_t len) {
 static int generate_states_to_files(long long int state_count, const char* file_out, int file_chunks, bool shuffle) {
 	uint64_t actual_cnt;
 	unsigned locked_row;
-	nq_state_t* buf = nq_generate_states(state_count, &actual_cnt, &locked_row);
+	FAIL_IF(state_count > UINT64_MAX);
+	nq_state_t* buf = nq_generate_states((uint64_t)state_count, &actual_cnt, &locked_row);
 	if (!buf) {
 		fprintf(stderr, "Failed to generate states!");
 		return EXIT_FAILURE;
@@ -66,7 +68,7 @@ static int generate_states_to_files(long long int state_count, const char* file_
 		int left_overs = (int)(actual_cnt % file_chunks);
 
 		if (!per_chunk) {
-			fprintf(stderr, "Cannot divide state pool across requested number of chunks as %lf states would be written per chunk", per_chunk);
+			fprintf(stderr, "Cannot divide state pool across requested number of chunks! More chunks than states!");
 			return EXIT_FAILURE;
 		}
 
@@ -139,7 +141,7 @@ static int parse_gpu_configs(const char* const to_parse, gpu_config_t** const co
 				}
 				if (id > UINT_MAX)
 					return 3;
-				confs[cidx++].device_id = id;
+				confs[cidx++].device_id = (unsigned int)id; //Safe cast as per above.
 				str = end + 1;
 			} else
 				return 2;
@@ -178,6 +180,7 @@ static uint64_t solve(nq_state_t* const states, const uint64_t len, const unsign
 	printf("solution_count(%u) = %s (%s)\n", N, res, formatted_res);
 	free(formatted_res);
 	CHECK_CUDA_ERROR(cudaFreeHost(pinned));
+	return 0;
 }
 
 
@@ -247,7 +250,7 @@ int main(int argc, char** argv) {
 				if (gpu_configs) free(gpu_configs);
 				return EXIT_FAILURE;
 			}
-			state_split_count = res;
+			state_split_count = (int)res; //Safe cast as per above check.
 			break;
 		case 'l':
 			input_states_file = cag_option_get_value(&ctxt);

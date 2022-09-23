@@ -112,7 +112,7 @@ typedef struct
 
 __host__ nq_state_t init_nq_state(void);
 __host__ void clear_nq_state(nq_state_t* state);
-__host__ nq_state_t* nq_generate_states(const unsigned int how_many, uint64_t* const __restrict__ returned_count, unsigned* __restrict__ locked_row_end);
+__host__ nq_state_t* nq_generate_states(const uint64_t how_many, uint64_t* const __restrict__ returned_count, unsigned* __restrict__ locked_row_end);
 __host__ bool locked_advance_nq_state(nq_state_t* __restrict__ s, const unsigned top_locked_row, const unsigned int lock);
 __host__ bool host_doublesweep_light_nq_state(nq_state_t* __restrict__ s);
 

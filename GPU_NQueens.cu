@@ -39,7 +39,7 @@ static bool check_gpu_compatibility(unsigned id, size_t size_of_states) {
 	}
 
 	if (gpuprop.sharedMemPerBlock < sizeof(nq_state_t) * COMPLETE_KERNEL_BLOCK_THREAD_COUNT) {
-		fprintf(stderr, "Device %u (%s) doesn't have enough shared memory per block for %u states.\n", id, gpuprop.name, COMPLETE_KERNEL_BLOCK_THREAD_COUNT);
+		fprintf(stderr, "Device %u (%s) doesn't have enough shared memory per block for %llu states.\n", id, gpuprop.name, COMPLETE_KERNEL_BLOCK_THREAD_COUNT);
 		return false;
 	}
 
@@ -132,7 +132,7 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 			CHECK_CUDA_ERROR(cudaDeviceSynchronize());
 		}
 		float time = util_end_event_get_time(ev);
-		char* tmp_buf = util_milliseconds_to_duration(time);
+		char* tmp_buf = util_milliseconds_to_duration((uint64_t)time);
 		printf("\n\nComputation completed. Time taken: %.4fms. (%s)\n", time, tmp_buf);
 		free(tmp_buf);
 #ifdef PROFILING_ROUNDS

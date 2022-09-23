@@ -317,31 +317,31 @@ void util_prettyprint_nq_state(nq_state_t* s) {
 
 char* util_milliseconds_to_duration(uint64_t ms) {
 	//XXXXX Years, XX Months, XX Weeks, XX Days, XX Hours, XX Minutes, XX.XXX Seconds 
-	const unsigned years = ms / 31536000000LLU;
+	const unsigned years = (unsigned)(ms / 31536000000LLU);
 	ms -= 31536000000LLU * years;
-	const unsigned months = ms / 2628288000LLU;
+	const unsigned months = (unsigned)(ms / 2628288000LLU);
 	ms -= 2628288000LLU * months;
-	const unsigned weeks = ms / 604800000LLU;
+	const unsigned weeks = (unsigned)(ms / 604800000LLU);
 	ms -= 604800000LLU * weeks;
-	const unsigned days = ms / 86400000LLU;
+	const unsigned days = (unsigned)(ms / 86400000LLU);
 	ms -= 86400000LLU * days;
-	const unsigned hours = ms / 3600000LLU;
+	const unsigned hours = (unsigned)(ms / 3600000LLU);
 	ms -= 3600000LLU * hours;
-	const unsigned minutes = ms / 60000LLU;
+	const unsigned minutes = (unsigned)(ms / 60000LLU);
 	ms -= 60000LLU * minutes;
-	const unsigned seconds = ms / 1000LLU;
+	const unsigned seconds = (unsigned)(ms / 1000LLU);
 	ms -= 1000LLU * seconds;
 
 	bitset8_t fields = 0;
 	size_t buffer_len = 0;
-	buffer_len += years ? fields = BS_SET_BIT(fields, 6), 1 + log10(years ? years : 1) + 8 : 0; // 8 for ' Years, '
-	buffer_len += months || buffer_len ? fields = BS_SET_BIT(fields, 5), 1 + log10(months ? months : 1) + 9 : 0; // 9  for ' Months, '
-	buffer_len += weeks || buffer_len ? fields = BS_SET_BIT(fields, 4), 1 + log10(weeks ? weeks : 1) + 8 : 0; // 8 for ' Weeks, '
-	buffer_len += days || buffer_len ? fields = BS_SET_BIT(fields, 3), 1 + log10(days ? days : 1) + 7 : 0; // 7 for ' Days, '
-	buffer_len += hours || buffer_len ? fields = BS_SET_BIT(fields, 2), 1 + log10(hours ? hours : 1) + 8 : 0; // 7 for ' Hours, '
-	buffer_len += minutes || buffer_len ? fields = BS_SET_BIT(fields, 1), 1 + log10(minutes ? minutes : 1) + 10 : 0; // 10 for ' Minutes, '
-	buffer_len += seconds || buffer_len ? fields = BS_SET_BIT(fields, 0), 1 + log10(seconds ? seconds : 1) + 10 : 0; // 10 for ' Seconds, '
-	buffer_len += 1 + log10(ms ? ms : 1) + 14; //for "milliseconds.".
+	buffer_len += years ? fields = BS_SET_BIT(fields, 6), 1 + (unsigned long)log10(years ? years : 1) + 8 : 0; // 8 for ' Years, '
+	buffer_len += months || buffer_len ? fields = BS_SET_BIT(fields, 5), 1 + (unsigned long)log10(months ? months : 1) + 9 : 0; // 9  for ' Months, '
+	buffer_len += weeks || buffer_len ? fields = BS_SET_BIT(fields, 4), 1 + (unsigned long)log10(weeks ? weeks : 1) + 8 : 0; // 8 for ' Weeks, '
+	buffer_len += days || buffer_len ? fields = BS_SET_BIT(fields, 3), 1 + (unsigned long)log10(days ? days : 1) + 7 : 0; // 7 for ' Days, '
+	buffer_len += hours || buffer_len ? fields = BS_SET_BIT(fields, 2), 1 + (unsigned long)log10(hours ? hours : 1) + 8 : 0; // 7 for ' Hours, '
+	buffer_len += minutes || buffer_len ? fields = BS_SET_BIT(fields, 1), 1 + (unsigned long)log10(minutes ? minutes : 1) + 10 : 0; // 10 for ' Minutes, '
+	buffer_len += seconds || buffer_len ? fields = BS_SET_BIT(fields, 0), 1 + (unsigned long)log10(seconds ? seconds : 1) + 10 : 0; // 10 for ' Seconds, '
+	buffer_len += 1 + (unsigned long)log10(ms ? ms : 1) + 14; //for "milliseconds.".
 	++buffer_len; //null byte
 
 	char* ret = (char*)malloc(sizeof(char) * buffer_len);
@@ -380,10 +380,10 @@ __host__ __device__ void util_bits_to_buf(unsigned long long num, unsigned bits,
 }
 
 __host__ bool util_nq_states_equal(nq_state_t* one, nq_state_t* two) {
-	return one->curr_row == two->curr_row 
-		&& one->diagonals.diagonal == two->diagonals.diagonal 
-		&& one->diagonals.antidiagonal == two->diagonals.antidiagonal 
-		&& one->queens_in_columns == two->queens_in_columns 
+	return one->curr_row == two->curr_row
+		&& one->diagonals.diagonal == two->diagonals.diagonal
+		&& one->diagonals.antidiagonal == two->diagonals.antidiagonal
+		&& one->queens_in_columns == two->queens_in_columns
 		&& !memcmp(one->queen_at_index, two->queen_at_index, sizeof(one->queen_at_index));
 }
 
