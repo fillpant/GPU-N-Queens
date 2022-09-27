@@ -215,7 +215,7 @@ static bitset32_t is_nq_state_valid(const nq_state_t* const st, const unsigned l
 
 	int POPCNT(st->queens_in_columns, occupied_cols);
 
-	if (occupied_cols != lock_at_row)
+	if ((unsigned)occupied_cols != lock_at_row)
 		return result | NQ_VALIDATION_INVALID_STATE;
 
 	for (unsigned i = 0; i < N; ++i) {
@@ -270,7 +270,7 @@ __host__ void util_visualise_nq_state(const nq_state_t* const what, const bool s
 
 	char strbuf[4] = {};
 	for (unsigned i = 0; i < N; ++i) {
-		printf(header);
+		printf("%s",header);
 		for (unsigned j = 0; j < N; ++j) {
 			if (show_blocked) {
 				strbuf[0] = BS_GET_BIT(dad_extract(&what->diagonals, i), j) ? 'd' : ' ';
@@ -282,7 +282,7 @@ __host__ void util_visualise_nq_state(const nq_state_t* const what, const bool s
 		}
 		printf("|\n");
 	}
-	printf(header);
+	printf("%s",header);
 	printf("\n\n");
 }
 

@@ -125,7 +125,7 @@ static nq_state_t* gen_states_threaded(const uint64_t how_many, uint64_t* const 
 			tmp.thread_data[i] = threads[i];
 			tmp.locked_at = lock_at_row;
 		}
-		printf("%llu states generated\n", tmp.total_len);
+		printf("%" PRIu64" states generated\n", tmp.total_len);
 		lock_at_row++;
 	} while (
 #if STATE_GENERATION_DOWNSLOPE_BOUNDED == 1

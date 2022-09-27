@@ -1,3 +1,5 @@
+
+
 #ifndef NQ_GPU_INTRINSICS_CUH
 #define NQ_GPU_INTRINSICS_CUH
 

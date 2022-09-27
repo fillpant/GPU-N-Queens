@@ -39,7 +39,7 @@ static bool check_gpu_compatibility(unsigned id, size_t size_of_states) {
 	}
 
 	if (gpuprop.sharedMemPerBlock < sizeof(nq_state_t) * COMPLETE_KERNEL_BLOCK_THREAD_COUNT) {
-		fprintf(stderr, "Device %u (%s) doesn't have enough shared memory per block for %llu states.\n", id, gpuprop.name, COMPLETE_KERNEL_BLOCK_THREAD_COUNT);
+		fprintf(stderr, "Device %u (%s) doesn't have enough shared memory per block for %llu states.\n", id, gpuprop.name, (unsigned long long int)COMPLETE_KERNEL_BLOCK_THREAD_COUNT);
 		return false;
 	}
 

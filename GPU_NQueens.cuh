@@ -5,8 +5,6 @@
 #include "inttypes.h"
 #include "nq_gpu_intrinsics.cuh"
 
-
-
 typedef struct {
 	unsigned int device_id;
 	bool async;
