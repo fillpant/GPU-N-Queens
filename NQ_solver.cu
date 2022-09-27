@@ -13,6 +13,8 @@
 
 typedef struct cag_option cag_opt_t;
 static cag_opt_t opts[] = {
+	//-t --try-solve <num_of_states>
+	{'t',"tT","try-solve","limit","For testing only! Specify the max number of states in generate-and-solve configuration"},
 	//-g --gen <limit>
 	{'g',"gG","gen-states","limit","Generate states. Limit sets a soft limit of how many states to generate (for the compiled N). This flag must be used in conjuction with one state output flag."},
 	//-w --states-to-file <file>
@@ -211,6 +213,7 @@ int main(int argc, char** argv) {
 
 	const char* gen_states_file = NULL;
 	long long int state_count = 0;
+	long long int try_with_statecnt = 0;
 	const char* input_states_file = NULL;
 	int state_split_count = 0;
 	gpu_config_t* gpu_configs = NULL;
@@ -270,6 +273,16 @@ int main(int argc, char** argv) {
 				return EXIT_FAILURE;
 			}
 			break;
+		case 't':
+			val = cag_option_get_value(&ctxt);
+			res = strtoll(val, NULL, 10);
+			if (errno || res <= 0) {
+				fprintf(stderr, "Cannot try with '%s' many states!", val);
+				if (gpu_configs) free(gpu_configs);
+				return EXIT_FAILURE;
+			}
+			try_with_statecnt = res;
+			break;
 		default:
 			fprintf(stderr, "Unsupported argument '%c'!", optn);
 			if (gpu_configs) free(gpu_configs);
@@ -280,7 +293,7 @@ int main(int argc, char** argv) {
 
 	printf("\nCompiled for N=%u\n", N);
 #ifdef NQ_ENABLE_EXPERIMENTAL_OPTIMISATIONS
-	printf("\tExperimental optimizations are enabled!\n");
+	printf("\tExperimental optimizations enabled!\n");
 #endif
 #ifdef USE_REGISTER_ONLY_KERNEL
 	printf("\tUsing register-based kernel\n");
@@ -293,6 +306,10 @@ int main(int argc, char** argv) {
 #endif
 	printf("\tFixed SMEM size: %u\n", SMEM_SIZE);
 	printf("\tFixed Warp size: %u\n", WARP_SIZE);
+	printf("\tState generation play factor: %lf\n", STATE_GENERATION_LIMIT_PLAY_FACTOR);
+	printf("\tCurrent block size: %llu\n", COMPLETE_KERNEL_BLOCK_THREAD_COUNT);
+	printf("\tState generation memblock size: %llu\n", STATE_GENERATION_POOL_COUNT);
+
 
 	printf("\n\n");
 	//State generation
@@ -301,9 +318,15 @@ int main(int argc, char** argv) {
 			fprintf(stderr, "State generation selected, but no output file supplied!");
 			return EXIT_FAILURE;
 		}
+		if (try_with_statecnt) {
+			printf("Ignoring solving state count flag -- This is not applicable here.\n");
+		}
 		printf("Starting state generation for up to %lld states. Writing to: %s.\n", state_count, gen_states_file);
 		generate_states_to_files(state_count, gen_states_file, state_split_count, shuffle);
 	} else if (input_states_file) { // Read states from file and solve
+		if (try_with_statecnt) {
+			printf("Ignoring solving state count flag -- This is not applicable here.\n");
+		}
 		printf("Loading states from file...\n");
 		FILE* in = fopen(input_states_file, "rb");
 		if (!in) {
@@ -327,14 +350,17 @@ int main(int argc, char** argv) {
 		solve(sbuf, len, lock_at, gpu_configs, gpu_conf_size);
 	} else { // Just solve without reading from file
 #endif
+		if (!try_with_statecnt) {
+			printf("WARN: Test-solve run without set number of states. Defaulting to 50M\n");
+			try_with_statecnt = 50000000;
+		}
 		uint64_t gen_cnt;
 		unsigned locked_at;
-		nq_state_t* sbuf = nq_generate_states(75000000, &gen_cnt, &locked_at);
+		nq_state_t* sbuf = nq_generate_states(try_with_statecnt, &gen_cnt, &locked_at);
 		if (!sbuf) {
 			fprintf(stderr, "Failed to generate states!");
 			return EXIT_FAILURE;
 		}
-		printf("Generated 50m states (arbitrarily) to solve.\n");
 		solve(sbuf, gen_cnt, locked_at, gpu_configs, gpu_conf_size);
 #ifndef PROFILING_ROUNDS
 	}
