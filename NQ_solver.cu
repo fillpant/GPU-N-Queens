@@ -209,6 +209,7 @@ int main(int argc, char** argv) {
 
 
 	//exit(0);
+	errno = 0;
 	cag_option_context ctxt;
 
 	const char* gen_states_file = NULL;
@@ -277,7 +278,7 @@ int main(int argc, char** argv) {
 			val = cag_option_get_value(&ctxt);
 			res = strtoll(val, NULL, 10);
 			if (errno || res <= 0) {
-				fprintf(stderr, "Cannot try with '%s' many states!", val);
+				fprintf(stderr, "Cannot try with '%s' many states! %d, %lld", val, errno, res);
 				if (gpu_configs) free(gpu_configs);
 				return EXIT_FAILURE;
 			}
