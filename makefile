@@ -1,11 +1,11 @@
 ###########################################################
-GPU_ARCH=sm_60
-
+GPU_ARCH=compute_60
+GPU_CODE=sm_60
 
 NVCC=nvcc
 PTXAS_OPTS= -v --opt-level 3 -warn-lmem-usage -warn-spills -opt-fp-atomics
 CCFLAGS=-O3 -Wall
-NVCC_FLAGS=  -arch $(GPU_ARCH) -use_fast_math -maxrregcount=0 -Xcompiler '$(CCFLAGS)' --ptxas-options='$(PTXAS_OPTS)' --machine 64 -cudart static
+NVCC_FLAGS=  -arch $(GPU_ARCH) -code $(GPU_CODE) -use_fast_math -maxrregcount=0 -Xcompiler '$(CCFLAGS)' --ptxas-options='$(PTXAS_OPTS)' --machine 64 -cudart static
 
 CUDA_LINK_LIBS= -lcudart
 
