@@ -10,6 +10,14 @@
 #include "assert.h"
 #include "nq_utils.cuh"
 
+/* Warnings and Notes:
+ * - On Compute Capability (CC) 8.6 devices the performance may be impacted by cvt instructions
+ * between 32 and 64 types! CC 8.0 can do 16/clock tick/sm whereas 8.6 can do 2/clock tick/sm!!!
+ *
+ *
+ *
+ *
+ */
 
 __constant__ unsigned locked_row_end;
 
@@ -210,8 +218,8 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 							const unsigned col = intrin_ffs_nosub(free_cols);
 							queens_in_columns = bs_set_bit(queens_in_columns, col);
 							l_smem[curr_row] = col;
-							diagonal |= ((uint64_t)1U << col) << curr_row;
-							antidiagonal |= ((uint64_t)1U << col) << (64 - N - curr_row);
+							diagonal |= (1LLU << col) << curr_row;
+							antidiagonal |= (1LLU << col) << (64 - N - curr_row);
 							if (curr_row < N - 1)
 								++curr_row;
 							break;
