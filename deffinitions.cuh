@@ -1,8 +1,14 @@
 #ifndef DEFFINITIONS_H
 #define DEFFINITIONS_H
+#define _GNU_SOURCE //for nq_mem_utilities.cuh
 #include "stdio.h" //for CHECK_CUDA_ERROR
 #include "stdlib.h" //for CHECK_CUDA_ERROR
 
+// If defined, memory mapped files are used instead for memory intensive operations such as state generation. This will result in a performance
+// decline (often significant) however it bypasses the OOM killer. 
+// Warning: The executable is assumed to be compiled for 64 bits when this feature is enabled.
+// Warning: This feature is currently only available for GNU compatible glibc! (Linux etc)
+//#define ENABLE_PERSISTENT_BACKED_MEMORY
 
 //Define this macro to enable 'questionable' optimisations. Usually used to enable direct PTX assembly optimisations. Those may be beneficial
 // in some cases but that heavily depends on the surrounding compilation of code (!) and GPU. They may also hinder the performance of the system
@@ -18,7 +24,7 @@
 #define USE_REGISTER_ONLY_KERNEL
 
 //The number N for the puzzle.
-#define N 21
+#define N 20
 
 // Number of kernel launches for a given input to run. This is to be used when timing the kernels only. 
 // Since results are not cleared or accumulated between runs, this may result in incorrect (inflated) results.

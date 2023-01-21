@@ -176,7 +176,7 @@
       <FunctionLevelLinking>true</FunctionLevelLinking>
       <IntrinsicFunctions>true</IntrinsicFunctions>
       <PreprocessorDefinitions>WIN32;WIN64;NDEBUG;_CONSOLE;%(PreprocessorDefinitions)</PreprocessorDefinitions>
-      <AdditionalIncludeDirectories>$(SolutionDir)libs\pthreads;%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir)</AdditionalIncludeDirectories>
+      <AdditionalIncludeDirectories>$(SolutionDir)libs\cargs;$(SolutionDir)libs\pthreads;%(AdditionalIncludeDirectories);$(CudaToolkitIncludeDir)</AdditionalIncludeDirectories>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -237,6 +237,7 @@
     <ClInclude Include="GPU_NQueens.cuh" />
     <ClInclude Include="intelisense_cuda_intrinsics.h" />
     <ClInclude Include="nq_gpu_intrinsics.cuh" />
+    <ClInclude Include="nq_mem_utilities.h" />
     <ClInclude Include="n_queens.cuh" />
     <ClInclude Include="nq_utils.cuh" />
     <ClInclude Include="resource.h" />
@@ -246,6 +247,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="libs\cargs\cargs.c" />
+    <ClCompile Include="nq_mem_utilities.c" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
