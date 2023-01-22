@@ -5,6 +5,7 @@
 #include "bitsets.cuh"
 #include "diagonals.cuh"
 #include <inttypes.h>
+#include <errno.h>
 
 
 #define UNSET_QUEEN_INDEX 0xFF
@@ -113,6 +114,8 @@ typedef struct
 __host__ nq_state_t init_nq_state(void);
 __host__ void clear_nq_state(nq_state_t* state);
 __host__ nq_state_t* nq_generate_states(const uint64_t how_many, uint64_t* const __restrict__ returned_count, unsigned* __restrict__ locked_row_end);
+__host__ nq_state_t* gen_states_rowlock(const nq_state_t* const __restrict__ master_state, const unsigned lock_at_row, const uint64_t max_number_of_states, uint64_t* __restrict__ const generated_cnt);
+__host__ nq_state_t* nq_generate_states_rowlock(const unsigned row_lock, uint64_t* const __restrict__ returned_count);
 __host__ bool locked_advance_nq_state(nq_state_t* __restrict__ s, const unsigned top_locked_row, const unsigned int lock);
 __host__ bool host_doublesweep_light_nq_state(nq_state_t* __restrict__ s);
 

@@ -9,7 +9,7 @@
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release3090|x64'">
-    <LocalDebuggerCommandArguments>-t 20000000 -d 0</LocalDebuggerCommandArguments>
+    <LocalDebuggerCommandArguments>-R 6 -w R:/out_states/ -s 1 -m </LocalDebuggerCommandArguments>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
 </Project>

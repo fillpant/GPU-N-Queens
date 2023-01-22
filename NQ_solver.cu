@@ -16,7 +16,9 @@ static cag_opt_t opts[] = {
 	//-t --try-solve <num_of_states>
 	{'t',"tT","try-solve","limit","For testing only! Specify the max number of states in generate-and-solve configuration"},
 	//-g --gen <limit>
-	{'g',"gG","gen-states","limit","Generate states. Limit sets a soft limit of how many states to generate (for the compiled N). This flag must be used in conjuction with one state output flag."},
+	{'g',"gG","gen-states","limit","Generate states. Limit sets a soft limit of how many states to generate (for the compiled N). This flag must be used in conjuction with one state output flag but cannot be used in conjunction with -R."},
+	//-r --gen-rowlock <limit>
+	{'R',"R","gen-rowlock","row","Generate states by locking at the specified row. No search is performed, straight up generation. This flag must be used in conjuction with one state output flag but cannot be used in conjuction with -g"},
 	//-w --states-to-file <file>
 	{'w',"wW","write-states","file/dir","Write the generated states to the given file. This must be a directory if -s is specified, or a file otherwise."},
 	//-s --split-pool
@@ -24,7 +26,7 @@ static cag_opt_t opts[] = {
 	//-m --mix-states 
 	{'m',"mM","mix-states",NULL,"Shuffle the state buffer using a random seed. This option applies both to state loading and state generation."},
 	//-r --rand-seed
-	{'r',"rR","random-seed","seed","Use this seed to initialize random."},
+	{'r',"r","random-seed","seed","Use this seed to initialize random."},
 	//-l --load-states <file>
 	{'l',"lL","load-states","file", "Load states from the given file, instead of generating a new pool"},
 	//-h/-H/-? --help 
@@ -36,7 +38,7 @@ static cag_opt_t opts[] = {
 
 static void shuffle_states(nq_state_t* const states, const uint64_t len) {
 	//Flexible type in union is non-standard for C99/C11
-	union { uint64_t rval; int16_t arr[4];  } r;
+	union { uint64_t rval; int16_t arr[4]; } r;
 	nq_state_t tmp;
 	for (uint64_t i = 0; i < len - 2; ++i) {
 		r.arr[0] = rand();
@@ -51,20 +53,7 @@ static void shuffle_states(nq_state_t* const states, const uint64_t len) {
 	}
 }
 
-static int generate_states_to_files(long long int state_count, const char* file_out, int file_chunks, bool shuffle) {
-	uint64_t actual_cnt;
-	unsigned locked_row;
-	FAIL_IF(state_count > UINT64_MAX);
-	nq_state_t* buf = nq_generate_states((uint64_t)state_count, &actual_cnt, &locked_row);
-	if (!buf) {
-		fprintf(stderr, "Failed to generate states!");
-		return EXIT_FAILURE;
-	}
-
-	if (shuffle)
-		shuffle_states(buf, actual_cnt);
-
-	printf("Generated %" PRIu64" states by locking at row %u\n", actual_cnt, locked_row);
+static int write_gen_states_to_file(nq_state_t* const __restrict__ buf, const int file_chunks, const uint64_t actual_cnt, const unsigned locked_row, const char* const file_out) {
 	if (file_chunks) {
 		uint64_t per_chunk = (uint64_t)ceil(actual_cnt / (double)file_chunks);
 		int left_overs = (int)(actual_cnt % file_chunks);
@@ -114,8 +103,30 @@ static int generate_states_to_files(long long int state_count, const char* file_
 			return EXIT_FAILURE;
 		}
 	}
-	printf("Success! Exiting.");
 	return EXIT_SUCCESS;
+}
+
+static int generate_states_to_files(long long int state_count, const char* file_out, int file_chunks, bool shuffle) {
+	uint64_t actual_cnt;
+	unsigned locked_row;
+	FAIL_IF(state_count <= 0 || state_count > UINT64_MAX);
+	nq_state_t* buf = nq_generate_states((uint64_t)state_count, &actual_cnt, &locked_row);
+	if (!buf)
+		return EXIT_FAILURE;
+	if (shuffle)
+		shuffle_states(buf, actual_cnt);
+	return write_gen_states_to_file(buf, file_chunks, actual_cnt, locked_row, file_out);
+}
+
+static int generate_states_rowlock_to_files(const int row_lock, const char* file_out, int file_chunks, bool shuffle) {
+	uint64_t actual_cnt;
+	FAIL_IF(row_lock <= 0 || row_lock > UINT64_MAX);
+	nq_state_t* buf = nq_generate_states_rowlock((unsigned)row_lock, &actual_cnt);
+	if (!buf)
+		return EXIT_FAILURE;
+	if (shuffle)
+		shuffle_states(buf, actual_cnt);
+	return write_gen_states_to_file(buf, file_chunks, actual_cnt, row_lock, file_out);
 }
 
 static int parse_gpu_configs(const char* const to_parse, gpu_config_t** const configs, unsigned* const size) {
@@ -215,6 +226,7 @@ int main(int argc, char** argv) {
 	const char* gen_states_file = NULL;
 	long long int state_count = 0;
 	long long int try_with_statecnt = 0;
+	unsigned lock_at_row_gen = 0;
 	const char* input_states_file = NULL;
 	int state_split_count = 0;
 	gpu_config_t* gpu_configs = NULL;
@@ -232,6 +244,17 @@ int main(int argc, char** argv) {
 			res = strtol(val, NULL, 10);
 			FAIL_IF(res > UINT_MAX || res < 0);
 			srand((unsigned int)res);
+			break;
+		case 'R':
+			val = cag_option_get_value(&ctxt);
+			res = strtoll(val, NULL, 10);
+			if (errno || res <= 0) {
+				fprintf(stderr, "Cannot lock at row '%s'!", val);
+				if (gpu_configs) 
+					free(gpu_configs);
+				return EXIT_FAILURE;
+			}
+			lock_at_row_gen = (unsigned) res;
 			break;
 		case 'g':
 			val = cag_option_get_value(&ctxt);
@@ -303,18 +326,23 @@ int main(int argc, char** argv) {
 #endif
 	printf("\tState generation downslope bounded: %s\n", STATE_GENERATION_DOWNSLOPE_BOUNDED ? "Yes" : "No");
 #ifdef ENABLE_THREADED_STATE_GENERATION
-	printf("\tThreaded state generation\n");
+	printf("\tThreaded state generation enabled\n");
 #endif
 	printf("\tFixed SMEM size: %u\n", SMEM_SIZE);
 	printf("\tFixed Warp size: %u\n", WARP_SIZE);
 	printf("\tState generation play factor: %lf\n", STATE_GENERATION_LIMIT_PLAY_FACTOR);
+	printf("\tState memory size: %zu bytes.\n", sizeof(nq_state_t));
 	printf("\tCurrent block size: %llu\n", COMPLETE_KERNEL_BLOCK_THREAD_COUNT);
-	printf("\tState generation memblock size: %llu\n", STATE_GENERATION_POOL_COUNT);
-
+	printf("\tState generation memblock size: %zu\n", (size_t)STATE_GENERATION_POOL_COUNT);
 
 	printf("\n\n");
 	//State generation
-	if (state_count) {
+	if (state_count || lock_at_row_gen) {
+		if (state_count && lock_at_row_gen) {
+			fprintf(stderr, "The flags -R and -g must not be combined!");
+			return EXIT_FAILURE;
+		}
+
 		if (!gen_states_file) {
 			fprintf(stderr, "State generation selected, but no output file supplied!");
 			return EXIT_FAILURE;
@@ -322,8 +350,20 @@ int main(int argc, char** argv) {
 		if (try_with_statecnt) {
 			printf("Ignoring solving state count flag -- This is not applicable here.\n");
 		}
-		printf("Starting state generation for up to %lld states. Writing to: %s.\n", state_count, gen_states_file);
-		generate_states_to_files(state_count, gen_states_file, state_split_count, shuffle);
+		int ret;
+		if (lock_at_row_gen) {
+			printf("Starting state generation, locked at row %i. Writing to: %s.\n", lock_at_row_gen, gen_states_file);
+			ret = generate_states_rowlock_to_files(lock_at_row_gen, gen_states_file, state_split_count, shuffle);
+		} else {
+			printf("Starting state generation for up to %lld states. Writing to: %s.\n", state_count, gen_states_file);
+			ret = generate_states_to_files(state_count, gen_states_file, state_split_count, shuffle);
+		}
+		if (ret) {
+			fprintf(stderr, "State generation failed: %i\n", ret);
+			perror("Errno");
+			return ret;
+		}
+		printf("Generation completed.\n");
 	} else if (input_states_file) { // Read states from file and solve
 		if (try_with_statecnt) {
 			printf("Ignoring solving state count flag -- This is not applicable here.\n");
