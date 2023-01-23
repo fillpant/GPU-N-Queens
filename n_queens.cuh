@@ -101,10 +101,10 @@ typedef struct
 	__align__(8) 
 #endif
 {
-	//Bitset where 1 means queen in that column and 0 means no queen
-	bitset32_t queens_in_columns;
 	//Current diagonals of board
 	diagonals_t diagonals;
+	//Bitset where 1 means queen in that column and 0 means no queen
+	bitset32_t queens_in_columns;
 	//The current row
 	char curr_row;
 	//Could be a 6-bit partitioned bitset, only represents 0-31 and 1 value for "UNSET"
