@@ -224,6 +224,7 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 								++curr_row;
 							break;
 						}
+						///__syncwarp();
 					}
 				}
 
@@ -257,6 +258,90 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 		if (!local_idx)
 			sols[blockIdx.x] += t_sols;
 	}
+
+//	__global__ void kern_doitall_v2_regld(const nq_state_t* const __restrict__ states, const unsigned state_cnt, unsigned* const __restrict__ sols) {
+//		const unsigned local_idx = threadIdx.x;
+//		const unsigned global_idx = blockIdx.x * blockDim.x + local_idx;
+//		__shared__ unsigned char smem[COMPLETE_KERNEL_BLOCK_THREAD_COUNT * N + sizeof(unsigned int) * WARP_SIZE];
+//		register unsigned t_sols = 0;
+//
+//		if (global_idx < state_cnt) {
+//			unsigned char* const __restrict__ l_smem = smem + local_idx * N;
+//			// Since we have relatively low register pressure (on tested architectures) we can make use of the spare registers as 'memory space' for each thread 
+//			// instead of shared memory. Struct is broken down to components (hopefully) placed in registers as below:
+//			register bitset32_t queens_in_columns = states[global_idx].queens_in_columns;
+//			register uint64_t diagonal = states[global_idx].diagonals.diagonal, antidiagonal = states[global_idx].diagonals.antidiagonal;
+//			register int curr_row = states[global_idx].curr_row;
+//			//The queens at index array cannot be placed in a register (without a lot of effort and preprocessor 'hacks' that is) so it stays in smem.
+//#pragma unroll
+//			for (int i = 0; i < N; ++i)
+//				l_smem[i] = states[global_idx].queen_at_index[i];
+//
+//			do {
+//				int res = curr_row >= locked_row_end;
+//				if (!__ballot_sync(0xFFFFFFFF, res))
+//					break; // Whole warp finished
+//				if (res) {
+//					//NOTE: In an effort to speed 
+//					// using 'find nth bit' (FNB) results in significantly poorer performance than conditionally shifting
+//					//Advance the state
+//					while (curr_row >= locked_row_end) {
+//						const register unsigned queen_index = l_smem[curr_row];
+//						bitset32_t free_cols = (~(queens_in_columns | dad_extract_explicit(diagonal, antidiagonal, curr_row)) & N_MASK);
+//						if (queen_index != UNSET_QUEEN_INDEX) {
+//							// Tried to change the logic to issue a single FNB (Find Nth Bit) instruction, depending on the position of the queen 
+//							free_cols &= (N_MASK << (queen_index + 1));
+//							queens_in_columns = bs_clear_bit(queens_in_columns, queen_index);
+//							l_smem[curr_row] = UNSET_QUEEN_INDEX;
+//							diagonal &= ~((1LLU << queen_index) << curr_row);
+//							antidiagonal &= ~((1LLU << queen_index) << (64 - N - curr_row));
+//						}
+//						if (!free_cols) {
+//							--curr_row;
+//	} else {
+//							//direct ffs is okay here, free_cols will have at least one set bit.
+//							const unsigned col = intrin_ffs_nosub(free_cols);
+//							queens_in_columns = bs_set_bit(queens_in_columns, col);
+//							l_smem[curr_row] = col;
+//							diagonal |= (1LLU << col) << curr_row;
+//							antidiagonal |= (1LLU << col) << (64 - N - curr_row);
+//							if (curr_row < N - 1)
+//								++curr_row;
+//							break;
+//						}
+//					}
+//				}
+//
+//				__syncwarp();
+//
+//				if (res) {
+//					while (l_smem[curr_row] == UNSET_QUEEN_INDEX) {
+//						const bitset32_t free_cols = (~(queens_in_columns | dad_extract_explicit(diagonal, antidiagonal, curr_row)) & N_MASK);
+//						const int POPCNT(free_cols, popcnt);
+//						if (popcnt == 1) {
+//#ifdef NQ_ENABLE_EXPERIMENTAL_OPTIMISATIONS
+//							const unsigned col = intrin_find_leading_one_u32(free_cols);
+//#else
+//							const unsigned col = __ffs(free_cols) + 1;
+//#endif
+//							queens_in_columns = bs_set_bit(queens_in_columns, col);
+//							l_smem[curr_row] = col;
+//							diagonal |= ((uint64_t)1U << col) << curr_row;
+//							antidiagonal |= ((uint64_t)1U << col) << (64 - N - curr_row);
+//							if (curr_row < N - 1) ++curr_row;
+//						} else break;
+//					}
+//				}
+//				__syncwarp();
+//				t_sols += (queens_in_columns == N_MASK);
+//			} while (1);
+//		}
+//		__syncthreads();
+//		t_sols = block_reduce_sum_shfl_variwarp((unsigned)t_sols, (unsigned int*)&smem[COMPLETE_KERNEL_BLOCK_THREAD_COUNT * N]);
+//
+//		if (!local_idx)
+//			sols[blockIdx.x] += t_sols;
+//	}
 
 
 #else 

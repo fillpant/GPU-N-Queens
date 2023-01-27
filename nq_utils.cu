@@ -146,8 +146,8 @@ int util_write_nq_states_to_stream(FILE* const stream, nq_state_t* states, uint6
 	return 1;
 }
 
-int util_read_nq_states_from_stream(FILE* const stream, nq_state_t** states, uint64_t* len, unsigned char* const locked_at_row, bool skip_n_check) {
-	if (stream && len && states && locked_at_row) {
+int util_read_nq_states_from_stream(FILE* const stream, nq_mem_handle_t* state_handle, uint64_t* len, unsigned char* const locked_at_row, bool skip_n_check) {
+	if (stream && len && state_handle && locked_at_row) {
 		unsigned char en = 0;
 
 		fread(&en, sizeof(unsigned char), 1, stream);
@@ -156,11 +156,12 @@ int util_read_nq_states_from_stream(FILE* const stream, nq_state_t** states, uin
 
 		// Check N is correct
 		assert(skip_n_check || N == en);
-
-		*states = (nq_state_t*)malloc(sizeof(nq_state_t) * (*len));
-		if (!*states) return -1;
-
-		nq_state_t* bpos = *states;
+		nq_mem_init(state_handle);
+		nq_state_t* states = (nq_state_t*) nq_mem_alloc(state_handle, sizeof(nq_state_t) * (*len));
+		if (!states) 
+			return -1;
+		
+		nq_state_t* bpos = states;
 		unsigned char tmp_buff[N];
 		while (1) {
 			//Read header
@@ -175,7 +176,7 @@ int util_read_nq_states_from_stream(FILE* const stream, nq_state_t** states, uin
 			fread(&cnt, sizeof(uint64_t), 1, stream);
 
 			//Make sure writing cnt many states to bpos won't push us out of bounds
-			assert(bpos + cnt <= ((*states) + *len));
+			assert(bpos + cnt <= ((states) + *len));
 
 			//Either empty segment or segment non empty and we have stuff to read.
 			assert(!cnt || cnt > 0 && !feof(stream));
@@ -270,7 +271,7 @@ __host__ void util_visualise_nq_state(const nq_state_t* const what, const bool s
 
 	char strbuf[4] = {};
 	for (unsigned i = 0; i < N; ++i) {
-		printf("%s",header);
+		printf("%s", header);
 		for (unsigned j = 0; j < N; ++j) {
 			if (show_blocked) {
 				strbuf[0] = BS_GET_BIT(dad_extract(&what->diagonals, i), j) ? 'd' : ' ';
@@ -282,7 +283,7 @@ __host__ void util_visualise_nq_state(const nq_state_t* const what, const bool s
 		}
 		printf("|\n");
 	}
-	printf("%s",header);
+	printf("%s", header);
 	printf("\n\n");
 }
 

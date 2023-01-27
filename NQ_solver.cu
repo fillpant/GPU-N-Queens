@@ -110,23 +110,33 @@ static int generate_states_to_files(long long int state_count, const char* file_
 	uint64_t actual_cnt;
 	unsigned locked_row;
 	FAIL_IF(state_count <= 0 || state_count > UINT64_MAX);
-	nq_state_t* buf = nq_generate_states((uint64_t)state_count, &actual_cnt, &locked_row);
-	if (!buf)
+	nq_mem_handle_t* mh = nq_generate_states((uint64_t)state_count, &actual_cnt, &locked_row);
+	nq_state_t* buf = (nq_state_t*)mh->mem_ptr;
+	if (!buf) {
+		nq_mem_free(mh);
 		return EXIT_FAILURE;
+	}
 	if (shuffle)
 		shuffle_states(buf, actual_cnt);
-	return write_gen_states_to_file(buf, file_chunks, actual_cnt, locked_row, file_out);
+	int w = write_gen_states_to_file(buf, file_chunks, actual_cnt, locked_row, file_out);
+	nq_mem_free(mh);
+	return w;
 }
 
 static int generate_states_rowlock_to_files(const int row_lock, const char* file_out, int file_chunks, bool shuffle) {
 	uint64_t actual_cnt;
 	FAIL_IF(row_lock <= 0 || row_lock > UINT64_MAX);
-	nq_state_t* buf = nq_generate_states_rowlock((unsigned)row_lock, &actual_cnt);
-	if (!buf)
+	nq_mem_handle_t* mh = nq_generate_states_rowlock((unsigned)row_lock, &actual_cnt);
+	nq_state_t* buf = (nq_state_t*)mh->mem_ptr;
+	if (!buf) {
+		nq_mem_free(mh);
 		return EXIT_FAILURE;
+	}
 	if (shuffle)
 		shuffle_states(buf, actual_cnt);
-	return write_gen_states_to_file(buf, file_chunks, actual_cnt, row_lock, file_out);
+	int w = write_gen_states_to_file(buf, file_chunks, actual_cnt, row_lock, file_out);
+	nq_mem_free(mh);
+	return w;
 }
 
 static int parse_gpu_configs(const char* const to_parse, gpu_config_t** const configs, unsigned* const size) {
@@ -178,9 +188,10 @@ static int get_all_gpus(gpu_config_t** const configs, unsigned* gpu_config_count
 	return 0;
 }
 
-static uint64_t solve(nq_state_t* const states, const uint64_t len, const unsigned lock_at_row, gpu_config_t* configs, unsigned gpu_config_count) {
-	nq_state_t* pinned = (nq_state_t*)util_copy_to_pinned_mem(states, sizeof(nq_state_t), len);
-	free(states);
+static uint64_t solve(nq_mem_handle_t* const states, const uint64_t len, const unsigned lock_at_row, gpu_config_t* configs, unsigned gpu_config_count) {
+	nq_state_t* pinned = (nq_state_t*)util_copy_to_pinned_mem(states->mem_ptr, sizeof(nq_state_t), len);
+	nq_mem_free(states);
+
 	FAIL_IF(len > UINT_MAX);
 	FAIL_IF(!configs && get_all_gpus(&configs, &gpu_config_count));
 
@@ -250,11 +261,11 @@ int main(int argc, char** argv) {
 			res = strtoll(val, NULL, 10);
 			if (errno || res <= 0) {
 				fprintf(stderr, "Cannot lock at row '%s'!", val);
-				if (gpu_configs) 
+				if (gpu_configs)
 					free(gpu_configs);
 				return EXIT_FAILURE;
 			}
-			lock_at_row_gen = (unsigned) res;
+			lock_at_row_gen = (unsigned)res;
 			break;
 		case 'g':
 			val = cag_option_get_value(&ctxt);
@@ -374,7 +385,7 @@ int main(int argc, char** argv) {
 			fprintf(stderr, "Failed to read state file [%s]!", input_states_file);
 			return EXIT_FAILURE;
 		}
-		nq_state_t* sbuf;
+		nq_mem_handle_t sbuf;
 		uint64_t len;
 		unsigned char lock_at;
 		if (util_read_nq_states_from_stream(in, &sbuf, &len, &lock_at, false)) {
@@ -386,9 +397,9 @@ int main(int argc, char** argv) {
 		fclose(in);
 		if (shuffle) {
 			printf("Shuffling loaded states...\n");
-			shuffle_states(sbuf, len);
+			shuffle_states((nq_state_t*) sbuf.mem_ptr, len);
 		}
-		solve(sbuf, len, lock_at, gpu_configs, gpu_conf_size);
+		solve(&sbuf, len, lock_at, gpu_configs, gpu_conf_size);
 	} else { // Just solve without reading from file
 #endif
 		if (!try_with_statecnt) {
@@ -397,7 +408,7 @@ int main(int argc, char** argv) {
 		}
 		uint64_t gen_cnt;
 		unsigned locked_at;
-		nq_state_t* sbuf = nq_generate_states(try_with_statecnt, &gen_cnt, &locked_at);
+		nq_mem_handle_t* sbuf = nq_generate_states(try_with_statecnt, &gen_cnt, &locked_at);
 		if (!sbuf) {
 			fprintf(stderr, "Failed to generate states!");
 			return EXIT_FAILURE;
