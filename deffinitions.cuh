@@ -24,7 +24,7 @@
 #define USE_REGISTER_ONLY_KERNEL
 
 //The number N for the puzzle.
-#define N 18
+#define N 17
 
 // Number of kernel launches for a given input to run. This is to be used when timing the kernels only. 
 // Since results are not cleared or accumulated between runs, this may result in incorrect (inflated) results.

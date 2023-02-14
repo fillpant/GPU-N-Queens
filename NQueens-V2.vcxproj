@@ -117,6 +117,7 @@
       <Include>$(SolutionDir)longer-int\;%(Include)</Include>
       <CodeGeneration>compute_61,sm_61</CodeGeneration>
       <ExtensibleWholeProgramCompilation>false</ExtensibleWholeProgramCompilation>
+      <PtxAsOptionV>true</PtxAsOptionV>
     </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug3090|x64'">
@@ -237,7 +238,7 @@
     <ClInclude Include="GPU_NQueens.cuh" />
     <ClInclude Include="intelisense_cuda_intrinsics.h" />
     <ClInclude Include="nq_gpu_intrinsics.cuh" />
-    <ClInclude Include="nq_mem_utilities.h" />
+    <ClInclude Include="nq_mem_utilities.cuh" />
     <ClInclude Include="n_queens.cuh" />
     <ClInclude Include="nq_utils.cuh" />
     <ClInclude Include="resource.h" />
@@ -247,7 +248,7 @@
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="libs\cargs\cargs.c" />
-    <ClCompile Include="nq_mem_utilities.c" />
+    <ClCompile Include="nq_mem_utilities.cu" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">

@@ -247,6 +247,7 @@ static nq_mem_handle_t* gen_states_threaded_rowlock(const unsigned row_lock, uin
 
 	nq_state_t* states = NULL;
 	uint64_t offset = 0;
+	nq_mem_handle_t* unified = NULL;
 	// Collect data from each thread.
 	for (unsigned i = 0; i < N; ++i) {
 		if (threads[i].error_code) {
@@ -256,7 +257,7 @@ static nq_mem_handle_t* gen_states_threaded_rowlock(const unsigned row_lock, uin
 		*returned_count += threads[i].result_len;
 	}
 	printf("%" PRIu64" states generated\nAllocating concatenation buffer...", *returned_count);
-	nq_mem_handle_t* unified = (nq_mem_handle_t*)malloc(sizeof(nq_mem_handle_t));
+	unified = (nq_mem_handle_t*)malloc(sizeof(nq_mem_handle_t));
 	nq_mem_init(unified);
 	states = (nq_state_t*)nq_mem_alloc(unified, sizeof(nq_state_t) * *returned_count);
 
