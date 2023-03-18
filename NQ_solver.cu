@@ -413,6 +413,9 @@ int main(int argc, char** argv) {
 			fprintf(stderr, "Failed to generate states!");
 			return EXIT_FAILURE;
 		}
+		else {
+			printf("%" PRIu64" states generated.\n",gen_cnt);
+		}
 		solve(sbuf, gen_cnt, locked_at, gpu_configs, gpu_conf_size);
 #ifndef PROFILING_ROUNDS
 	}

@@ -24,7 +24,7 @@
 #define USE_REGISTER_ONLY_KERNEL
 
 //The number N for the puzzle.
-#define N 17
+#define N 18
 
 // Number of kernel launches for a given input to run. This is to be used when timing the kernels only. 
 // Since results are not cleared or accumulated between runs, this may result in incorrect (inflated) results.
@@ -94,8 +94,8 @@
 #error "Unsupported compute capability! Compile for compute capability >= 600"
 #endif
 
-#if N <= 0 || N >= 32
-#error "N must be between 1 and 31!"
+#if N <= 7 || N >= 32
+#error "N must be between 7 and 31! 7 is the lowest bound for job scheduling reasons."
 #endif
 
 #if (BLOCK_DIM*BLOCK_DIM) % WARP_SIZE != 0

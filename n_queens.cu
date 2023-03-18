@@ -11,7 +11,6 @@
 #include "nq_utils.cuh"
 #include "nq_mem_utilities.cuh"
 
-
 /**
 * Generate states by advancing a copy of the given master state. The master state is not modified and may be in any condition,
 * however it must be ensured that multiple calls to this function which are later merged, should be started at distinct points.
