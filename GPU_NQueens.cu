@@ -13,8 +13,7 @@
 /* Warnings and Notes:
  * - On Compute Capability (CC) 8.6 devices the performance may be impacted by cvt instructions
  * between 32 and 64 types! CC 8.0 can do 16/clock tick/sm whereas 8.6 can do 2/clock tick/sm!!!
- *
- *
+ * - Current version of kern_doitall_v2_regld performs an intermediate between doublesweep light and DoubleSweep
  *
  *
  */
@@ -175,164 +174,16 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 }
 #ifdef USE_REGISTER_ONLY_KERNEL
 
-	//	__global__ void kern_doitall_v2_regld2(const nq_state_t* const __restrict__ states, const unsigned state_cnt, unsigned* const __restrict__ sols) {
-	//		const unsigned local_idx = threadIdx.x;
-	//		const unsigned global_idx = blockIdx.x * blockDim.x + local_idx;
-	//		__shared__ unsigned char smem[COMPLETE_KERNEL_BLOCK_THREAD_COUNT * N + sizeof(unsigned int) * WARP_SIZE];
-	//		register unsigned t_sols = 0;
-	//
-	//		printf("%u,%u\n", global_idx, state_cnt);
-	//		if (global_idx < state_cnt) {
-	//			unsigned char* const __restrict__ l_smem = smem + local_idx * N;
-	//			register bitset32_t queens_in_columns = states[global_idx].queens_in_columns;
-	//			register uint64_t diagonal = states[global_idx].diagonals.diagonal, antidiagonal = states[global_idx].diagonals.antidiagonal;
-	//			//register int curr_row = states[global_idx].curr_row;
-	//			//Equivalent to ceil((N-locked_row_end)/2)-1;
-	//			register unsigned center_row = ((N - locked_row_end) >> 1) + (((N - locked_row_end) & 1) - 1);
-	//			printf("%u\n", center_row);
-	//			//Queens in rows are 1's where there's a queen. 0th,1st,...,curr_row-1'th bits are set to 1's since these rows are 'locked' already.
-	//			register bitset32_t queens_in_rows = (~(N_MASK << states[global_idx].curr_row)) & N_MASK;
-	//			register int mode = 1;//1=search, 0=backtrack
-	//			//The queens at index array cannot be placed in a register (without a lot of effort and preprocessor 'hacks' that is) so it stays in smem.
-	///*		  */#pragma unroll
-	//			for (int i = 0; i < N; ++i)
-	//				l_smem[i] = states[global_idx].queen_at_index[i];
-	//			//for (unsigned i = locked_row_end; i < N; ++i)
-	//			//	l_smem[i] = UNSET_QUEEN_INDEX;
-	//			//////////////////////////////////////////////////////
-	//			register unsigned row_marker = 1;
-	//			do {
-	//				//Basically, center_row + (ceil(iteration/2.0)*(iteration%2==1?1:-1);
-	//				//It goes 1,-1,2,-2,3,-3 ...
-	//				register int curr_row = center_row + ((row_marker >> 1) + (row_marker & 1)) * ((row_marker & 1) ? 1 : -1);
-	//				int res = curr_row >= locked_row_end;
-	//				if (!__ballot_sync(0xFFFFFFFF, res))
-	//					break; // Whole warp finished
-	//				if (res) {
-	//					//Place a queen at curr_row, or find next available row following the n1-2-curve pattern:
-	//					// Row X then:
-	//					// Row X+1 then:
-	//					// Row X-1 then:
-	//					// Row X+2 then:
-	//					// Row X-2 then:
-	//					// Row X+3 then:
-	//					// Row X-3 then:
-	//					// ...
-	//
-	//					//If empty, place queen
-	//					//If queen exists, then it MUST be a derived queen (otherwise we have a logic error somewhere)
-	//					//If empty, but can't place queen: backtrack.
-	//
-	//					//Backtracking: go to curr_row (on iteration -1), perform queen move.
-	//					//      if can't move queen, backtrack further.
-	//
-	//					//If this is a derived queen (i.e. msb is set), continue. 
-	//					while (curr_row >= locked_row_end) {
-	//						if (mode) { //If searching
-	//							const register unsigned queen_index = l_smem[curr_row];
-	//							if (queen_index == UNSET_QUEEN_INDEX) {
-	//								register bitset32_t free_cols = (~(queens_in_columns | dad_extract_explicit(diagonal, antidiagonal, curr_row)) & N_MASK);
-	//								//Place queen
-	//								const unsigned col = intrin_ffs_nosub(free_cols);
-	//								// Update queens in columns
-	//								queens_in_columns = bs_set_bit(queens_in_columns, col);
-	//								// Update queen pos in memory
-	//								l_smem[curr_row] = col;
-	//								// Insert queen in (anti)diagonal
-	//								diagonal |= (1LLU << col) << curr_row;
-	//								antidiagonal |= (1LLU << col) << (64 - N - curr_row);
-	//								++row_marker;
-	//								break;
-	//							} else if (queen_index & 0x80) { // derived queen
-	//								//TODO: do we need to mark this as a "non-derived queen"? 
-	//								//Since if we place a queen in the next position after this, then backtrack, this queen will get cleared but our row_marker will be pointing at a row after it.
-	//								//Most likely answer: YES, but check logic (i.e. does 'accepting' this propagated queen and moving on result in us not exploring the full search space?)
-	//								//LOGIC seems to check out, so doit.
-	//								l_smem[curr_row] &= 0x7F;//Accept the derived queen as a 'placed' queen and move on. DO NOT break, we want to find the row without a derived queen.
-	//								++row_marker;
-	//								curr_row = center_row + ((row_marker >> 1) + (row_marker & 1)) * ((row_marker & 1) ? 1 : -1);
-	//								continue;
-	//							} else {
-	//								printf("We should've never gotten here\n");
-	//								//Error.
-	//							}
-	//						} else { // backtracking
-	//							// 1. Clear all derived queens
-	//							// 2. Try move current queen to new position
-	//							//		On success, set mode to 1, and break.
-	//							//		On fail, keep mode to 0, and continue.
-	//
-	//							//1
-	//							//TODO: if we are backtracking for the second,third ... ith time, there's no need to run this. OPTIMISE.
-	//							for (register unsigned i = locked_row_end; i < N; ++i) {
-	//								if (l_smem[i] & 0x80) {
-	//									register unsigned queen_idx = l_smem[i] & 0x7F;
-	//									// Remove queen from occupied columns
-	//									queens_in_columns = bs_clear_bit(queens_in_columns, queen_idx);
-	//									// Remove queen index from smem.
-	//									l_smem[i] = UNSET_QUEEN_INDEX;
-	//									// Remove queen from (anti)diagonal
-	//									diagonal &= ~((1LLU << queen_idx) << i);
-	//									antidiagonal &= ~((1LLU << queen_idx) << (64 - N - i));
-	//								}
-	//							}
-	//							//2
-	//							--row_marker;
-	//							curr_row = center_row + ((row_marker >> 1) + (row_marker & 1)) * ((row_marker & 1) ? 1 : -1);
-	//							register unsigned queen_index = l_smem[curr_row];
-	//							// Remove queen from occupied columns
-	//							queens_in_columns = bs_clear_bit(queens_in_columns, queen_index);
-	//							// Remove queen index from smem.
-	//							l_smem[curr_row] = UNSET_QUEEN_INDEX;
-	//							// Remove queen from (anti)diagonal
-	//							diagonal &= ~((1LLU << queen_index) << curr_row);
-	//							antidiagonal &= ~((1LLU << queen_index) << (64 - N - curr_row));
-	//							register bitset32_t free_cols = (~(queens_in_columns | dad_extract_explicit(diagonal, antidiagonal, curr_row)) & N_MASK);
-	//							free_cols &= (N_MASK << (queen_index + 1));
-	//							//IF there is a free slot, move the queen to that. 
-	//							if (free_cols) {
-	//								// Work out the column (first available)
-	//								const unsigned col = intrin_ffs_nosub(free_cols);
-	//								// Update queens in columns
-	//								queens_in_columns = bs_set_bit(queens_in_columns, col);
-	//								// Update queen pos in memory
-	//								l_smem[curr_row] = col;
-	//								// Insert queen in (anti)diagonal
-	//								diagonal |= (1LLU << col) << curr_row;
-	//								antidiagonal |= (1LLU << col) << (64 - N - curr_row);
-	//								mode = 1;
-	//								++row_marker;
-	//								break;
-	//							} else {
-	//								continue;
-	//							}
-	//						}
-	//					}
-	//
-	//					// Propagation:
-	//					// - Do a pass from top to bottom, propagating.
-	//					// - Do a pass from bottom to top, propagating.
-	//					// ! Warning: Propatated queens must have their MSB set. row_marker doesn't move.
-	//					// If an impossible row is encountered, set mode to 0 (backtracking) and stop.
-	//					// If board is completed, backtrack! (may be the same as above) otherwise, errors...
-	//					//TODO no need to go 0-N since we know how many center rows are populated. Do top and bottom parts instead.
-	//
-	//				}
-	//				// Add to t_sols iff queens_in_columns is the same as N_MASK (i.e. every column has a queen
-	//				t_sols += (queens_in_columns == N_MASK);
-	//			} while (1);
-	//		}
-	//		__syncthreads();
-	//		t_sols = block_reduce_sum_shfl_variwarp((unsigned)t_sols, (unsigned int*)&smem[COMPLETE_KERNEL_BLOCK_THREAD_COUNT * N]);
-	//
-	//		if (!local_idx)
-	//			sols[blockIdx.x] += t_sols;
-	//	}
-
-
-
-
-//Tested, works.
+	// Perform the steps required to place a queen at column 'col', row 'row'. 
+	// Update queens_in_columns with the new positions, update queen_indexes at row to have the new value
+	// Finally, update  diagonal and antidiagonal bit vectors with the new information.
+	// Assumptions:
+	// - col is an unsigned int
+	// - row is a positive integer
+	// - queens_in_columns is a 32(or more) bit unsigned integer
+	// - queen_indexes is a pointer to an unsigned integer type capable of storing 'col' with at least 'row'+1 many spaces, 
+	// - diagonal is a 64(or more) bit unsigned integer
+	// - antidiagonal is a 64(or more) bit unsigned integer
 #define PLACE_QUEEN_AT(col, row, queens_in_columns, queen_indexes, diagonal, antidiagonal) { \
 	queens_in_columns = bs_set_bit(queens_in_columns, (col)); \
 	queen_indexes[(row)] = (col); \
@@ -340,7 +191,8 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 	antidiagonal |= (1LLU << (col)) << (64 - N - (row)); \
 }
 
-//Tested, works.
+// Performs the inverse operation to the above ^
+// Assumptions are the same as above.
 #define REMOVE_QUEEN_AT(col, row, queens_in_columns, queen_indexes, diagonal, antidiagonal) { \
 	queens_in_columns = bs_clear_bit(queens_in_columns, (col));\
 	queen_indexes[(row)] = UNSET_QUEEN_INDEX;\
@@ -349,15 +201,16 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 }
 
 // TODO to avoid multiplication, we can switch sign as ((~X)-1). THIS ASSUMES TWOS COMPLEMENT.
-// WARN: DO NOT apply CALC_CURRENT_ROW on negative row_marker! 
-// row_marked being a signed integer results in a implementation-defined right shift operation (!). Maybe cast row_marker to unsigned for shift provided it is not signed.
+// WARN: DO NOT apply CALC_CURRENT_ROW on signed row_marker! NVCC doesn't specify what behaviour to expect.
+// row_marker being a signed integer results in a implementation-defined right shift operation (!). Maybe cast row_marker to unsigned for shift provided it is not signed.
 #define CALC_CURRENT_ROW(center_row, row_marker) ((center_row) + (((row_marker) >> 1) + ((row_marker) & 1)) * (((row_marker) & 1) ? 1 : -1)) //Tested, works.
+
 #define IS_QUEEN_DERIVED(idx) (((idx)&0x80))
 #define MARK_QUEEN_DERIVED(idx) ((idx)|0x80)
 #define GET_QUEEN_INDEX_WITHOUT_FLAG(idx) ((idx)&0x7F)
 
 
-	__global__ void kern_doitall_v2_regld(const nq_state_t* const __restrict__ states, const unsigned state_cnt, unsigned* const __restrict__ sols) {
+	__global__ void kern_doitall_v2_regld_full_ds(const nq_state_t* const __restrict__ states, const unsigned state_cnt, unsigned* const __restrict__ sols) {
 		const unsigned local_idx = threadIdx.x;
 		const unsigned global_idx = blockIdx.x * blockDim.x + local_idx;
 		__shared__ unsigned char smem[COMPLETE_KERNEL_BLOCK_THREAD_COUNT * N + sizeof(unsigned int) * WARP_SIZE];
@@ -374,7 +227,7 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 			register uint64_t antidiagonal = states[global_idx].diagonals.antidiagonal; //1 where queen, 0 where not
 			// Precondition: locked_row_end < N.
 			// Assumption: we start from center_row and we go DOWN first, then up, then down ... 
-			register const unsigned center_row = (unsigned) (locked_row_end + (ceil((N - locked_row_end) / (float)2) - 1));
+			register const unsigned center_row = (unsigned)(locked_row_end + (ceil((N - locked_row_end) / (float)2) - 1));
 			// May become -1, when backtracking beyond limits. Signed overflow is undefined, hopefully yielding better perofrmance for +/-
 			register int iteration_counter = 0;
 			register int curr_row = CALC_CURRENT_ROW(center_row, iteration_counter/*was: iteration_counter. If it is that, we would start off from the centre row.*/);
@@ -388,20 +241,14 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 				//If iteration counter < 0 
 				int res = iteration_counter >= 0;
 				if (!__ballot_sync(0xFFFFFFFF, res))
-					break; // Whole warp finished
-
+					break; // Whole warp 
 				if (res) {
-					/*if (global_idx == 0) {
-						printf("Advance  -> lock: %u max_cnt: %d q_cols: %x center: %u cnt: %d btrck: %d curr_row: %u diag: %llx adag: %llx ", locked_row_end, iteration_counter_max, queens_in_columns, center_row, iteration_counter, backtracking,curr_row, diagonal, antidiagonal);
-						for (int i = 0; i < N; ++i) printf("q[%d]=%u, ", i, l_smem[i]);
-						printf("\n");
-					}*/
-					//Advance state (i.e. place a single queen)
+					// Advance state (i.e. place a single queen)
 					// When iteration_counter hits N-locked_row_end, then curr_row maps outside the usable area.
 					// When iteration_counter goes below 0 we've backtracked too far, nothing can save us now.
-					while (iteration_counter >= 0) {//TODO res was checked above. This could be a do-while to eliminate initial check
+					do {
 						register unsigned const queen_index = l_smem[curr_row];
-						//free_cols has 1 in cols which are free, 0 in cols which are not to be used.
+						// free_cols has 1 in cols which are free, 0 in cols which are not to be used.
 						register bitset32_t free_cols = (~(queens_in_columns | dad_extract_explicit(diagonal, antidiagonal, curr_row)) & N_MASK);
 						if (backtracking) {
 							//Slide the window of view over the remaining available queen positions in the current row (to eliminate all places
@@ -412,15 +259,15 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 							//If there's no free column, backtrack further.
 							if (!free_cols) {
 								--iteration_counter;
-								curr_row = CALC_CURRENT_ROW(center_row, iteration_counter);
+								curr_row = CALC_CURRENT_ROW(center_row, (unsigned)iteration_counter);
 								continue;
 							} else { //if there is, place a queen!
 								const unsigned col = intrin_ffs_nosub(free_cols);
 								PLACE_QUEEN_AT(col, curr_row, queens_in_columns, l_smem, diagonal, antidiagonal);
 								if (iteration_counter + 1 < iteration_counter_max) {
 									++iteration_counter;
-									curr_row = CALC_CURRENT_ROW(center_row, iteration_counter);
-									backtracking = 0; // TODO: is this right? If not, when do we reset the backtracking flag!?!?
+									curr_row = CALC_CURRENT_ROW(center_row, (unsigned)iteration_counter);
+									backtracking = 0; // TODO: When this was outside the if, the code was much faster (se below comment). Has to be here, but why performance drop?
 								}
 								//backtracking=0 should be in the if statement^. If we are on the last row, move a queen, and then disable backtracking,
 								//then we go to "increment" mode afterward which means we likely double-place a queen (!)
@@ -435,7 +282,7 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 							// the last row is populated. 
 							if (!free_cols) {
 								--iteration_counter;
-								curr_row = CALC_CURRENT_ROW(center_row, iteration_counter);
+								curr_row = CALC_CURRENT_ROW(center_row, (unsigned)iteration_counter);
 								backtracking = 1;
 								continue;
 							}
@@ -444,23 +291,15 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 							PLACE_QUEEN_AT(col, curr_row, queens_in_columns, l_smem, diagonal, antidiagonal);
 							if ((iteration_counter + 1) < iteration_counter_max) {
 								++iteration_counter;
-								curr_row = CALC_CURRENT_ROW(center_row, iteration_counter);
-								//if (global_idx == 0)printf(" NCORN");
+								curr_row = CALC_CURRENT_ROW(center_row, (unsigned)iteration_counter);
 							} else {
-								//if (global_idx == 0)printf(" CORN: %d, %d, %d  ", iteration_counter +1, iteration_counter_max, iteration_counter + 1 < iteration_counter_max);
 								//To address Problematic Scenario (1). Set backtracking flag.
 								//Next time advancement of the current state is called, it will start by backtracking right away.
 								backtracking = 1;
 							}
 							break; //We successfully advanced.
 						}
-					}
-					__syncwarp(); //Dangerous. Only works in pascal, delete for other archs.
-					/*if (global_idx == 0) {
-						printf("Advanced -> lock: %u max_cnt: %d q_cols: %x center: %u cnt: %d btrck: %d curr_row: %u diag: %llx adag: %llx ", locked_row_end, iteration_counter_max, queens_in_columns, center_row, iteration_counter, backtracking, curr_row, diagonal, antidiagonal);
-						for (int i = 0; i < N; ++i) printf("q[%d]=%u, ", i, l_smem[i]);
-						printf("\n\n\n");
-					}*/
+					} while (iteration_counter >= 0);
 				}
 				//__syncwarp();
 				/*if (res) {
@@ -491,182 +330,83 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 			sols[blockIdx.x] += t_sols;
 	}
 
-	//	__global__ void kern_doitall_v2_regld(const nq_state_t* const __restrict__ states, const unsigned state_cnt, unsigned* const __restrict__ sols) {
-	//		const unsigned local_idx = threadIdx.x;
-	//		const unsigned global_idx = blockIdx.x * blockDim.x + local_idx;
-	//		__shared__ unsigned char smem[COMPLETE_KERNEL_BLOCK_THREAD_COUNT * N + sizeof(unsigned int) * WARP_SIZE];
-	//		register unsigned t_sols = 0;
-	//
-	//		if (global_idx < state_cnt) {
-	//			unsigned char* const __restrict__ l_smem = smem + local_idx * N;
-	//			// Since we have relatively low register pressure (on tested architectures) we can make use of the spare registers as 'memory space' for each thread 
-	//			// instead of shared memory. Struct is broken down to components (hopefully) placed in registers as below:
-	//			register bitset32_t queens_in_columns = states[global_idx].queens_in_columns;
-	//			register uint64_t diagonal = states[global_idx].diagonals.diagonal, antidiagonal = states[global_idx].diagonals.antidiagonal;
-	//			register int curr_row = states[global_idx].curr_row;
-	//			register int direction = 0;
-	//			//The queens at index array cannot be placed in a register (without a lot of effort and preprocessor 'hacks' that is) so it stays in smem.
-	//#pragma unroll
-	//			for (int i = 0; i < N; ++i)	l_smem[i] = states[global_idx].queen_at_index[i];
-	//
-	//			do {
-	//				int res = curr_row >= locked_row_end;
-	//				if (!__ballot_sync(0xFFFFFFFF, res)) break; // Whole warp finished
-	//				if (res) {
-	//					//Advance state (i.e. place a single queen)
-	//					while (curr_row >= locked_row_end) {
-	//						// Queen idx in current row
-	//						const register unsigned queen_index = l_smem[curr_row];
-	//						// Free columns across board
-	//						register bitset32_t free_cols = (~(queens_in_columns | dad_extract_explicit(diagonal, antidiagonal, curr_row)) & N_MASK);
-	//						// If there's a queen in the current row, means we're back tracking...
-	//						if (queen_index != UNSET_QUEEN_INDEX) {
-	//							// Remove said queen from free cols.
-	//							free_cols &= (N_MASK << (queen_index + 1));
-	//							REMOVE_QUEEN_AT(queen_index, curr_row, queens_in_columns, l_smem, diagonal, antidiagonal);
-	//						}
-	//						//If there are no more free cols, we need to backtrack (further)
-	//						if (!free_cols) {
-	//							--curr_row;
-	//						} else {
-	//							// If there are free cols however, we place a queen! 
-	//							// Work out the column (first available)
-	//							const unsigned col = intrin_ffs_nosub(free_cols);
-	//							PLACE_QUEEN_AT(col, curr_row, queens_in_columns, l_smem, diagonal, antidiagonal);
-	//							// If the current row is not past the end of the board, move to next.
-	//							if (curr_row < N - 1)
-	//								++curr_row;
-	//							break;
-	//						}
-	//					}
-	//				}
-	//				__syncwarp();
-	//				if (res) {
-	//					while (l_smem[curr_row] == UNSET_QUEEN_INDEX) {
-	//						const bitset32_t free_cols = (~(queens_in_columns | dad_extract_explicit(diagonal, antidiagonal, curr_row)) & N_MASK);
-	//						const int POPCNT(free_cols, popcnt);
-	//						if (popcnt == 1) {
-	//#ifdef NQ_ENABLE_EXPERIMENTAL_OPTIMISATIONS
-	//							const unsigned col = intrin_find_leading_one_u32(free_cols);
-	//#else
-	//							const unsigned col = __ffs(free_cols) + 1;
-	//#endif
-	//							PLACE_QUEEN_AT(col, curr_row, queens_in_columns, l_smem, diagonal, antidiagonal);
-	//							if (curr_row < N - 1) ++curr_row;
-	//						} else break;
-	//					}
-	//				}
-	//				__syncwarp();
-	//				t_sols += (queens_in_columns == N_MASK);
-	//			} while (1);
-	//		}
-	//		__syncthreads();
-	//		t_sols = block_reduce_sum_shfl_variwarp((unsigned)t_sols, (unsigned int*)&smem[COMPLETE_KERNEL_BLOCK_THREAD_COUNT * N]);
-	//
-	//		if (!local_idx)
-	//			sols[blockIdx.x] += t_sols;
-	//	}
+	__global__ void kern_doitall_v2_regld(const nq_state_t* const __restrict__ states, const unsigned state_cnt, unsigned* const __restrict__ sols) {
+		const unsigned local_idx = threadIdx.x;
+		const unsigned global_idx = blockIdx.x * blockDim.x + local_idx;
+		__shared__ unsigned char smem[COMPLETE_KERNEL_BLOCK_THREAD_COUNT * N + sizeof(unsigned int) * WARP_SIZE];
+		register unsigned t_sols = 0;
 
+		if (global_idx < state_cnt) {
+			unsigned char* const __restrict__ l_smem = smem + local_idx * N;
+			// Since we have relatively low register pressure (on tested architectures) we can make use of the spare registers as 'memory space' for each thread 
+			// instead of shared memory. Struct is broken down to components (hopefully) placed in registers as below:
+			register bitset32_t queens_in_columns = states[global_idx].queens_in_columns;
+			register uint64_t diagonal = states[global_idx].diagonals.diagonal, antidiagonal = states[global_idx].diagonals.antidiagonal;
+			register int curr_row = states[global_idx].curr_row;
+			register int direction = 0;
+			//The queens at index array cannot be placed in a register (without a lot of effort and preprocessor 'hacks' that is) so it stays in smem.
+#pragma unroll
+			for (int i = 0; i < N; ++i)	l_smem[i] = states[global_idx].queen_at_index[i];
 
-		//	__global__ void kern_doitall_v2_regld(const nq_state_t* const __restrict__ states, const unsigned state_cnt, unsigned* const __restrict__ sols) {
-		//		const unsigned local_idx = threadIdx.x;
-		//		const unsigned global_idx = blockIdx.x * blockDim.x + local_idx;
-		//		__shared__ unsigned char smem[COMPLETE_KERNEL_BLOCK_THREAD_COUNT * N + sizeof(unsigned int) * WARP_SIZE];
-		//		register unsigned t_sols = 0;
-		//
-		//		if (global_idx < state_cnt) {
-		//			unsigned char* const __restrict__ l_smem = smem + local_idx * N;
-		//			// Since we have relatively low register pressure (on tested architectures) we can make use of the spare registers as 'memory space' for each thread 
-		//			// instead of shared memory. Struct is broken down to components (hopefully) placed in registers as below:
-		//			register bitset32_t queens_in_columns = states[global_idx].queens_in_columns;
-		//			register uint64_t diagonal = states[global_idx].diagonals.diagonal, antidiagonal = states[global_idx].diagonals.antidiagonal;
-		//			register int curr_row = states[global_idx].curr_row;
-		//			register int direction = 0;
-		//			//The queens at index array cannot be placed in a register (without a lot of effort and preprocessor 'hacks' that is) so it stays in smem.
-		//#pragma unroll
-		//			for (int i = 0; i < N; ++i)
-		//				l_smem[i] = states[global_idx].queen_at_index[i];
-		//
-		//			do {
-		//				int res = curr_row >= locked_row_end;
-		//				if (!__ballot_sync(0xFFFFFFFF, res))
-		//					break; // Whole warp finished
-		//				if (res) {
-		//
-		//					//Advance state (i.e. place a single queen)
-		//					while (curr_row >= locked_row_end) {
-		//						// Queen idx in current row
-		//						const register unsigned queen_index = l_smem[curr_row];
-		//						// Free columns across board
-		//						register bitset32_t free_cols = (~(queens_in_columns | dad_extract_explicit(diagonal, antidiagonal, curr_row)) & N_MASK);
-		//						// If there's a queen in the current row, means we're back tracking...
-		//						if (queen_index != UNSET_QUEEN_INDEX) {
-		//							// Remove said queen from free cols.
-		//							free_cols &= (N_MASK << (queen_index + 1));
-		//							// Remove queen from occupied columns
-		//							queens_in_columns = bs_clear_bit(queens_in_columns, queen_index);
-		//							// Remove queen index from smem.
-		//							l_smem[curr_row] = UNSET_QUEEN_INDEX;
-		//							// Remove queen from (anti)diagonal
-		//							diagonal &= ~((1LLU << queen_index) << curr_row);
-		//							antidiagonal &= ~((1LLU << queen_index) << (64 - N - curr_row));
-		//						}
-		//
-		//						//If there are no more free cols, we need to backtrack (further)
-		//						if (!free_cols) {
-		//							--curr_row;
-		//						} else {
-		//							// If there are free cols however, we place a queen! 
-		//							// Work out the column (first available)
-		//							const unsigned col = intrin_ffs_nosub(free_cols);
-		//							// Update queens in columns
-		//							queens_in_columns = bs_set_bit(queens_in_columns, col);
-		//							// Update queen pos in memory
-		//							l_smem[curr_row] = col;
-		//							// Insert queen in (anti)diagonal
-		//							diagonal |= (1LLU << col) << curr_row;
-		//							antidiagonal |= (1LLU << col) << (64 - N - curr_row);
-		//							// If the current row is not past the end of the board, move to next.
-		//							if (curr_row < N - 1)
-		//								++curr_row;
-		//							break;
-		//						}
-		//						///__syncwarp();
-		//					}
-		//				}
-		//
-		//				__syncwarp();
-		//
-		//				if (res) {
-		//					while (l_smem[curr_row] == UNSET_QUEEN_INDEX) {
-		//						const bitset32_t free_cols = (~(queens_in_columns | dad_extract_explicit(diagonal, antidiagonal, curr_row)) & N_MASK);
-		//						const int POPCNT(free_cols, popcnt);
-		//						if (popcnt == 1) {
-		//#ifdef NQ_ENABLE_EXPERIMENTAL_OPTIMISATIONS
-		//							const unsigned col = intrin_find_leading_one_u32(free_cols);
-		//#else
-		//							const unsigned col = __ffs(free_cols) + 1;
-		//#endif
-		//							queens_in_columns = bs_set_bit(queens_in_columns, col);
-		//							l_smem[curr_row] = col;
-		//							diagonal |= ((uint64_t)1U << col) << curr_row;
-		//							antidiagonal |= ((uint64_t)1U << col) << (64 - N - curr_row);
-		//							if (curr_row < N - 1) ++curr_row;
-		//						} else break;
-		//					}
-		//				}
-		//				__syncwarp();
-		//				t_sols += (queens_in_columns == N_MASK);
-		//			} while (1);
-		//		}
-		//		__syncthreads();
-		//		t_sols = block_reduce_sum_shfl_variwarp((unsigned)t_sols, (unsigned int*)&smem[COMPLETE_KERNEL_BLOCK_THREAD_COUNT * N]);
-		//
-		//		if (!local_idx)
-		//			sols[blockIdx.x] += t_sols;
-		//	}
+			do {
+				int res = curr_row >= locked_row_end;
+				if (!__ballot_sync(0xFFFFFFFF, res)) break; // Whole warp finished
+				if (res) {
+					//Advance state (i.e. place a single queen)
+					while (curr_row >= locked_row_end) {
+						// Queen idx in current row
+						const register unsigned queen_index = l_smem[curr_row];
+						// Free columns across board
+						register bitset32_t free_cols = (~(queens_in_columns | dad_extract_explicit(diagonal, antidiagonal, curr_row)) & N_MASK);
+						// If there's a queen in the current row, means we're back tracking...
+						if (queen_index != UNSET_QUEEN_INDEX) {
+							// Remove said queen from free cols.
+							free_cols &= (N_MASK << (queen_index + 1));
+							REMOVE_QUEEN_AT(queen_index, curr_row, queens_in_columns, l_smem, diagonal, antidiagonal);
+						}
+						//If there are no more free cols, we need to backtrack (further)
+						if (!free_cols) {
+							--curr_row;
+						}
+						else {
+							// If there are free cols however, we place a queen! 
+							// Work out the column (first available)
+							const unsigned col = intrin_ffs_nosub(free_cols);
+							PLACE_QUEEN_AT(col, curr_row, queens_in_columns, l_smem, diagonal, antidiagonal);
+							// If the current row is not past the end of the board, move to next.
+							if (curr_row < N - 1)
+								++curr_row;
+						done: break;
+						}
+					}
+				}
+				__syncwarp();
+				if (res) {
+					while (l_smem[curr_row] == UNSET_QUEEN_INDEX) {
+						const bitset32_t free_cols = (~(queens_in_columns | dad_extract_explicit(diagonal, antidiagonal, curr_row)) & N_MASK);
+						const int POPCNT(free_cols, popcnt);
+						if (popcnt == 1) {
+#ifdef NQ_ENABLE_EXPERIMENTAL_OPTIMISATIONS
+							const unsigned col = intrin_find_leading_one_u32(free_cols);
+#else
+							const unsigned col = __ffs(free_cols) + 1;
+#endif
+							PLACE_QUEEN_AT(col, curr_row, queens_in_columns, l_smem, diagonal, antidiagonal);
+							if (curr_row < N - 1) ++curr_row;
+						}
+						else break;
+					}
+				}
+				__syncwarp();
+				t_sols += (queens_in_columns == N_MASK);
+			} while (1);
+		}
+		__syncthreads();
+		t_sols = block_reduce_sum_shfl_variwarp((unsigned)t_sols, (unsigned int*)&smem[COMPLETE_KERNEL_BLOCK_THREAD_COUNT * N]);
 
-
+		if (!local_idx)
+			sols[blockIdx.x] += t_sols;
+	}
 #else 
 	// Warning: state_cnt MUST be a multiple of 32 and states must be padded respectively.
 	__global__ void kern_doitall_v2_smem(const nq_state_t* const __restrict__ states, const uint_least32_t state_cnt, unsigned* const __restrict__ sols) {
