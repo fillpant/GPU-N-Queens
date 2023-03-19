@@ -330,6 +330,9 @@ int main(int argc, char** argv) {
 #ifdef NQ_ENABLE_EXPERIMENTAL_OPTIMISATIONS
 	printf("\tExperimental optimizations enabled!\n");
 #endif
+#ifdef ENABLE_STATIC_HALF_SEARCHSPACE_REFLECTION_ELIMINATION
+	printf("\tVertical mirroring elimination enabled (state gen + kernels)!\n");
+#endif
 #ifdef USE_REGISTER_ONLY_KERNEL
 	printf("\tUsing register-based kernel\n");
 #else

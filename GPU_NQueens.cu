@@ -95,7 +95,8 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 			CHECK_CUDA_ERROR(cudaMemsetAsync(d_states, 0, sizeof(nq_state_t) * padded_states_per_device));
 			CHECK_CUDA_ERROR(cudaMemcpyAsync(d_states, tmp_states, sizeof(nq_state_t) * states_per_device, cudaMemcpyHostToDevice));
 			CHECK_CUDA_ERROR(cudaMemsetAsync(d_result, 0, sizeof(unsigned) * block_cnt_doublesweep_light_adv));
-		} else {
+		}
+		else {
 			CHECK_CUDA_ERROR(cudaMemset(d_states, 0, sizeof(nq_state_t) * padded_states_per_device));
 			CHECK_CUDA_ERROR(cudaMemcpy(d_states, tmp_states, sizeof(nq_state_t) * states_per_device, cudaMemcpyHostToDevice));
 			CHECK_CUDA_ERROR(cudaMemset(d_result, 0, sizeof(unsigned) * block_cnt_doublesweep_light_adv));
@@ -210,125 +211,129 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 #define GET_QUEEN_INDEX_WITHOUT_FLAG(idx) ((idx)&0x7F)
 
 
-	__global__ void kern_doitall_v2_regld_full_ds(const nq_state_t* const __restrict__ states, const unsigned state_cnt, unsigned* const __restrict__ sols) {
-		const unsigned local_idx = threadIdx.x;
-		const unsigned global_idx = blockIdx.x * blockDim.x + local_idx;
-		__shared__ unsigned char smem[COMPLETE_KERNEL_BLOCK_THREAD_COUNT * N + sizeof(unsigned int) * WARP_SIZE];
-		register unsigned t_sols = 0;
-
-		if (global_idx < state_cnt) {
-			unsigned char* const __restrict__ l_smem = smem + local_idx * N;
-			//When the iteration counter hits this value, it means it's now outside the valid board area.
-			const int iteration_counter_max = N - locked_row_end;
-			// Since we have relatively low register pressure (on tested architectures) we can make use of the spare registers as 'memory space' for each thread 
-			// instead of shared memory. Struct is broken down to components (hopefully) placed in registers as below:
-			register bitset32_t queens_in_columns = states[global_idx].queens_in_columns; //1 where there is a queen, 0 where not.
-			register uint64_t diagonal = states[global_idx].diagonals.diagonal; //DO NOT initialise on the same line. Some undefined behaviour kicks in (?)
-			register uint64_t antidiagonal = states[global_idx].diagonals.antidiagonal; //1 where queen, 0 where not
-			// Precondition: locked_row_end < N.
-			// Assumption: we start from center_row and we go DOWN first, then up, then down ... 
-			register const unsigned center_row = (unsigned)(locked_row_end + (ceil((N - locked_row_end) / (float)2) - 1));
-			// May become -1, when backtracking beyond limits. Signed overflow is undefined, hopefully yielding better perofrmance for +/-
-			register int iteration_counter = 0;
-			register int curr_row = CALC_CURRENT_ROW(center_row, iteration_counter/*was: iteration_counter. If it is that, we would start off from the centre row.*/);
-
-
-			register int backtracking = 0;
-/*        */#pragma unroll
-			for (int i = 0; i < N; ++i)	l_smem[i] = ((i < locked_row_end) ? states[global_idx].queen_at_index[i] : UNSET_QUEEN_INDEX);
-
-			do {
-				//If iteration counter < 0 
-				int res = iteration_counter >= 0;
-				if (!__ballot_sync(0xFFFFFFFF, res))
-					break; // Whole warp 
-				if (res) {
-					// Advance state (i.e. place a single queen)
-					// When iteration_counter hits N-locked_row_end, then curr_row maps outside the usable area.
-					// When iteration_counter goes below 0 we've backtracked too far, nothing can save us now.
-					do {
-						register unsigned const queen_index = l_smem[curr_row];
-						// free_cols has 1 in cols which are free, 0 in cols which are not to be used.
-						register bitset32_t free_cols = (~(queens_in_columns | dad_extract_explicit(diagonal, antidiagonal, curr_row)) & N_MASK);
-						if (backtracking) {
-							//Slide the window of view over the remaining available queen positions in the current row (to eliminate all places
-							//already tried)
-							free_cols &= (N_MASK << (queen_index + 1));
-							//Remove the queen.
-							REMOVE_QUEEN_AT(queen_index, curr_row, queens_in_columns, l_smem, diagonal, antidiagonal);
-							//If there's no free column, backtrack further.
-							if (!free_cols) {
-								--iteration_counter;
-								curr_row = CALC_CURRENT_ROW(center_row, (unsigned)iteration_counter);
-								continue;
-							} else { //if there is, place a queen!
-								const unsigned col = intrin_ffs_nosub(free_cols);
-								PLACE_QUEEN_AT(col, curr_row, queens_in_columns, l_smem, diagonal, antidiagonal);
-								if (iteration_counter + 1 < iteration_counter_max) {
-									++iteration_counter;
-									curr_row = CALC_CURRENT_ROW(center_row, (unsigned)iteration_counter);
-									backtracking = 0; // TODO: When this was outside the if, the code was much faster (se below comment). Has to be here, but why performance drop?
-								}
-								//backtracking=0 should be in the if statement^. If we are on the last row, move a queen, and then disable backtracking,
-								//then we go to "increment" mode afterward which means we likely double-place a queen (!)
-								break; //We successfully advanced.
-							}
-						} else {
-							// (1) Problematic scenario: The last row is populated with a queen.
-							// free_cols are non-existent for that row.
-							// Backtracking is initiated, WITHOUT removing the queen in that row! -- ADDRESSED.
-							//
-							//FIX: Before advancing that state, ensure the backtracking flag is set if 
-							// the last row is populated. 
-							if (!free_cols) {
-								--iteration_counter;
-								curr_row = CALC_CURRENT_ROW(center_row, (unsigned)iteration_counter);
-								backtracking = 1;
-								continue;
-							}
-							//TODO what if we find another queen? Either derived, ... or not (which happens on the last row, since we don't increment past it) -- NOT ANYMORE
-							const unsigned col = intrin_ffs_nosub(free_cols);
-							PLACE_QUEEN_AT(col, curr_row, queens_in_columns, l_smem, diagonal, antidiagonal);
-							if ((iteration_counter + 1) < iteration_counter_max) {
-								++iteration_counter;
-								curr_row = CALC_CURRENT_ROW(center_row, (unsigned)iteration_counter);
-							} else {
-								//To address Problematic Scenario (1). Set backtracking flag.
-								//Next time advancement of the current state is called, it will start by backtracking right away.
-								backtracking = 1;
-							}
-							break; //We successfully advanced.
-						}
-					} while (iteration_counter >= 0);
-				}
-				//__syncwarp();
-				/*if (res) {
-					while (l_smem[curr_row] == UNSET_QUEEN_INDEX) {
-						const bitset32_t free_cols = (~(queens_in_columns | dad_extract_explicit(diagonal, antidiagonal, curr_row)) & N_MASK);
-						const int POPCNT(free_cols, popcnt);
-						if (popcnt == 1) {
-#ifdef NQ_ENABLE_EXPERIMENTAL_OPTIMISATIONS
-							const unsigned col = intrin_find_leading_one_u32(free_cols);
-#else
-							const unsigned col = __ffs(free_cols) + 1;
-#endif
-							PLACE_QUEEN_AT(col, curr_row, queens_in_columns, l_smem, diagonal, antidiagonal);
-							if (curr_row < N - 1) ++curr_row;
-						} else break;
-					}
-				}*/
-				__syncwarp();
-				//TODO all evaluate this. Can we reduce the number of pointless additions? most of the time == evals to 0.
-				//POTENTIAL ERROR: If the advance call does not perform a change, then we are double-counting solutions.
-				t_sols += (queens_in_columns == N_MASK);
-			} while (1);
-		}
-		__syncthreads();
-		t_sols = block_reduce_sum_shfl_variwarp((unsigned)t_sols, (unsigned int*)&smem[COMPLETE_KERNEL_BLOCK_THREAD_COUNT * N]);
-
-		if (!local_idx)
-			sols[blockIdx.x] += t_sols;
-	}
+//	__global__ void kern_doitall_v2_regld_full_ds(const nq_state_t* const __restrict__ states, const unsigned state_cnt, unsigned* const __restrict__ sols) {
+//		const unsigned local_idx = threadIdx.x;
+//		const unsigned global_idx = blockIdx.x * blockDim.x + local_idx;
+//		__shared__ unsigned char smem[COMPLETE_KERNEL_BLOCK_THREAD_COUNT * N + sizeof(unsigned int) * WARP_SIZE];
+//		register unsigned t_sols = 0;
+//
+//		if (global_idx < state_cnt) {
+//			unsigned char* const __restrict__ l_smem = smem + local_idx * N;
+//			//When the iteration counter hits this value, it means it's now outside the valid board area.
+//			const int iteration_counter_max = N - locked_row_end;
+//			// Since we have relatively low register pressure (on tested architectures) we can make use of the spare registers as 'memory space' for each thread 
+//			// instead of shared memory. Struct is broken down to components (hopefully) placed in registers as below:
+//			register bitset32_t queens_in_columns = states[global_idx].queens_in_columns; //1 where there is a queen, 0 where not.
+//			register uint64_t diagonal = states[global_idx].diagonals.diagonal; //DO NOT initialise on the same line. Some undefined behaviour kicks in (?)
+//			register uint64_t antidiagonal = states[global_idx].diagonals.antidiagonal; //1 where queen, 0 where not
+//			// Precondition: locked_row_end < N.
+//			// Assumption: we start from center_row and we go DOWN first, then up, then down ... 
+//			register const unsigned center_row = (unsigned)(locked_row_end + (ceil((N - locked_row_end) / (float)2) - 1));
+//			// May become -1, when backtracking beyond limits. Signed overflow is undefined, hopefully yielding better perofrmance for +/-
+//			register int iteration_counter = 0;
+//			register int curr_row = CALC_CURRENT_ROW(center_row, iteration_counter/*was: iteration_counter. If it is that, we would start off from the centre row.*/);
+//
+//
+//			register int backtracking = 0;
+///*        */#pragma unroll
+//			for (int i = 0; i < N; ++i)	l_smem[i] = ((i < locked_row_end) ? states[global_idx].queen_at_index[i] : UNSET_QUEEN_INDEX);
+//
+//			do {
+//				//If iteration counter < 0 
+//				int res = iteration_counter >= 0;
+//				if (!__ballot_sync(0xFFFFFFFF, res))
+//					break; // Whole warp 
+//				if (res) {
+//					// Advance state (i.e. place a single queen)
+//					// When iteration_counter hits N-locked_row_end, then curr_row maps outside the usable area.
+//					// When iteration_counter goes below 0 we've backtracked too far, nothing can save us now.
+//					do {
+//						register unsigned const queen_index = l_smem[curr_row];
+//						// free_cols has 1 in cols which are free, 0 in cols which are not to be used.
+//						register bitset32_t free_cols = (~(queens_in_columns | dad_extract_explicit(diagonal, antidiagonal, curr_row)) & N_MASK);
+//						if (backtracking) {
+//							//Slide the window of view over the remaining available queen positions in the current row (to eliminate all places
+//							//already tried)
+//							free_cols &= (N_MASK << (queen_index + 1));
+//							//Remove the queen.
+//							REMOVE_QUEEN_AT(queen_index, curr_row, queens_in_columns, l_smem, diagonal, antidiagonal);
+//							//If there's no free column, backtrack further.
+//							if (!free_cols) {
+//								--iteration_counter;
+//								curr_row = CALC_CURRENT_ROW(center_row, (unsigned)iteration_counter);
+//								continue;
+//							}
+//							else { //if there is, place a queen!
+//								const unsigned col = intrin_ffs_nosub(free_cols);
+//								PLACE_QUEEN_AT(col, curr_row, queens_in_columns, l_smem, diagonal, antidiagonal);
+//								if (iteration_counter + 1 < iteration_counter_max) {
+//									++iteration_counter;
+//									curr_row = CALC_CURRENT_ROW(center_row, (unsigned)iteration_counter);
+//									backtracking = 0; // TODO: When this was outside the if, the code was much faster (se below comment). Has to be here, but why performance drop?
+//								}
+//								//backtracking=0 should be in the if statement^. If we are on the last row, move a queen, and then disable backtracking,
+//								//then we go to "increment" mode afterward which means we likely double-place a queen (!)
+//								break; //We successfully advanced.
+//							}
+//						}
+//						else {
+//							// (1) Problematic scenario: The last row is populated with a queen.
+//							// free_cols are non-existent for that row.
+//							// Backtracking is initiated, WITHOUT removing the queen in that row! -- ADDRESSED.
+//							//
+//							//FIX: Before advancing that state, ensure the backtracking flag is set if 
+//							// the last row is populated. 
+//							if (!free_cols) {
+//								--iteration_counter;
+//								curr_row = CALC_CURRENT_ROW(center_row, (unsigned)iteration_counter);
+//								backtracking = 1;
+//								continue;
+//							}
+//							//TODO what if we find another queen? Either derived, ... or not (which happens on the last row, since we don't increment past it) -- NOT ANYMORE
+//							const unsigned col = intrin_ffs_nosub(free_cols);
+//							PLACE_QUEEN_AT(col, curr_row, queens_in_columns, l_smem, diagonal, antidiagonal);
+//							if ((iteration_counter + 1) < iteration_counter_max) {
+//								++iteration_counter;
+//								curr_row = CALC_CURRENT_ROW(center_row, (unsigned)iteration_counter);
+//							}
+//							else {
+//								//To address Problematic Scenario (1). Set backtracking flag.
+//								//Next time advancement of the current state is called, it will start by backtracking right away.
+//								backtracking = 1;
+//							}
+//							break; //We successfully advanced.
+//						}
+//					} while (iteration_counter >= 0);
+//				}
+//				//__syncwarp();
+//				/*if (res) {
+//					while (l_smem[curr_row] == UNSET_QUEEN_INDEX) {
+//						const bitset32_t free_cols = (~(queens_in_columns | dad_extract_explicit(diagonal, antidiagonal, curr_row)) & N_MASK);
+//						const int POPCNT(free_cols, popcnt);
+//						if (popcnt == 1) {
+//#ifdef NQ_ENABLE_EXPERIMENTAL_OPTIMISATIONS
+//							const unsigned col = intrin_find_leading_one_u32(free_cols);
+//#else
+//							const unsigned col = __ffs(free_cols) + 1;
+//#endif
+//							PLACE_QUEEN_AT(col, curr_row, queens_in_columns, l_smem, diagonal, antidiagonal);
+//							if (curr_row < N - 1) ++curr_row;
+//						} else break;
+//					}
+//				}*/
+//				__syncwarp();
+//#error does not consider NQ_ENABLE_EXPERIMENTAL_OPTIMISATIONS.
+//				//TODO all evaluate this. Can we reduce the number of pointless additions? most of the time == evals to 0.
+//				//POTENTIAL ERROR: If the advance call does not perform a change, then we are double-counting solutions.
+//				t_sols += (queens_in_columns == N_MASK);
+//			} while (1);
+//		}
+//		__syncthreads();
+//		t_sols = block_reduce_sum_shfl_variwarp((unsigned)t_sols, (unsigned int*)&smem[COMPLETE_KERNEL_BLOCK_THREAD_COUNT * N]);
+//
+//		if (!local_idx)
+//			sols[blockIdx.x] += t_sols;
+//	}
 
 	__global__ void kern_doitall_v2_regld(const nq_state_t* const __restrict__ states, const unsigned state_cnt, unsigned* const __restrict__ sols) {
 		const unsigned local_idx = threadIdx.x;
@@ -400,6 +405,9 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 				__syncwarp();
 				t_sols += (queens_in_columns == N_MASK);
 			} while (1);
+#ifdef ENABLE_STATIC_HALF_SEARCHSPACE_REFLECTION_ELIMINATION
+			t_sols <<= (l_smem[0] < N/2);
+#endif
 		}
 		__syncthreads();
 		t_sols = block_reduce_sum_shfl_variwarp((unsigned)t_sols, (unsigned int*)&smem[COMPLETE_KERNEL_BLOCK_THREAD_COUNT * N]);
@@ -437,13 +445,16 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 			//}
 			//__syncwarp();
 			} while (1);
+#ifdef ENABLE_STATIC_HALF_SEARCHSPACE_REFLECTION_ELIMINATION
+			t_sols <<= (states[global_idx].queen_at_index[0] < N/2);
+#endif
 		}
 		__syncthreads();
-		//t_sols = block_reduce_sum_shfl_variwarp((unsigned)t_sols, (unsigned int*)&smem[COMPLETE_KERNEL_BLOCK_THREAD_COUNT]);
+		t_sols = block_reduce_sum_shfl_variwarp((unsigned)t_sols, (unsigned int*)&smem[COMPLETE_KERNEL_BLOCK_THREAD_COUNT]);
 
 		if (!local_idx) {
 			sols[blockIdx.x] += t_sols;
-		}
+	}
 	}
 #endif
 
@@ -453,7 +464,8 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 		CHECK_CUDA_ERROR(cudaMalloc(&d_states, sizeof(nq_state_t) * state_count));
 		if (config->async) {
 			CHECK_CUDA_ERROR(cudaMemcpy(d_states, states, sizeof(nq_state_t) * state_count, cudaMemcpyHostToDevice));
-		} else {
+		}
+		else {
 			CHECK_CUDA_ERROR(cudaMemcpyAsync(d_states, states, sizeof(nq_state_t) * state_count, cudaMemcpyHostToDevice));
 		}
 		return d_states;
@@ -462,7 +474,8 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 	__host__ void copy_states_from_gpu(nq_state_t* host_states, nq_state_t* device_states, const uint64_t state_count, const gpu_config_t* const config) {
 		if (config->async) {
 			CHECK_CUDA_ERROR(cudaMemcpyAsync(host_states, device_states, state_count * sizeof(nq_state_t), cudaMemcpyDeviceToHost));
-		} else {
+		}
+		else {
 			CHECK_CUDA_ERROR(cudaMemcpy(host_states, device_states, state_count * sizeof(nq_state_t), cudaMemcpyDeviceToHost));
 		}
 	}

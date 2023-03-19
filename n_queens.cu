@@ -125,8 +125,14 @@ static void* internal_gen_states_rowlocked_thread(void* datptr) {
 
 static nq_mem_handle_t* gen_states_threaded(const uint64_t how_many, uint64_t* const __restrict__ returned_count, unsigned* __restrict__ locked_row_end) {
 	FAIL_IF(!returned_count);
+#ifdef ENABLE_STATIC_HALF_SEARCHSPACE_REFLECTION_ELIMINATION
+#define GEN_STATES_TCNT CEILING(N,2)
+#else
+#define GEN_STATES_TCNT N
+#endif
 	const uint64_t absolute_max_states = (uint64_t)(how_many * (1 + STATE_GENERATION_LIMIT_PLAY_FACTOR));
-	unsigned int lock_at_row = (unsigned int)(log((double)how_many) / log(N));
+	//TODO Untested logic. Log base GEN_STATES_TCNT or GEN_STATES_TCNT+1?
+	unsigned int lock_at_row = (unsigned int)(log((double)how_many) / log(GEN_STATES_TCNT+1));
 	lock_at_row = lock_at_row >= N ? N - 1 : lock_at_row;
 	FAIL_IF(!lock_at_row);
 
@@ -134,15 +140,15 @@ static nq_mem_handle_t* gen_states_threaded(const uint64_t how_many, uint64_t* c
 
 	buf_t tmp, actual; tmp = actual = { 0, {}, 0 };
 
-	internal_state_gen_thread_data_t threads[N];
-	pthread_t thread_ids[N];
+	internal_state_gen_thread_data_t threads[GEN_STATES_TCNT];
+	pthread_t thread_ids[GEN_STATES_TCNT];
 	memset(&actual, 0, sizeof(buf_t));
 
 	do {
 		printf("Lock at row %u... ", lock_at_row);
 		fflush(stdout);
 		//Free last 'actual' result
-		for (unsigned i = 0; i < N; ++i)
+		for (unsigned i = 0; i < GEN_STATES_TCNT; ++i)
 			if (actual.thread_data[i].mem.mem_ptr) {
 				nq_mem_free(&actual.thread_data[i].mem);
 				actual.thread_data[i].mem.mem_ptr = 0;
@@ -152,7 +158,7 @@ static nq_mem_handle_t* gen_states_threaded(const uint64_t how_many, uint64_t* c
 
 		// Clear previous thread data and re-configure
 		memset(threads, 0, sizeof(internal_state_gen_thread_data_t));
-		for (unsigned i = 0; i < N; ++i) {
+		for (unsigned i = 0; i < GEN_STATES_TCNT; ++i) {
 			threads[i].absolute_max_count = absolute_max_states;
 			threads[i].first_queen_idx = i;
 			threads[i].lock_at_row = lock_at_row;
@@ -161,11 +167,11 @@ static nq_mem_handle_t* gen_states_threaded(const uint64_t how_many, uint64_t* c
 		}
 
 		// Wait for each thread to finish
-		for (unsigned i = 0; i < N; ++i)
+		for (unsigned i = 0; i < GEN_STATES_TCNT; ++i)
 			pthread_join(thread_ids[i], NULL);
 
 		// Collect data from each thread.
-		for (unsigned i = 0; i < N; ++i) {
+		for (unsigned i = 0; i < GEN_STATES_TCNT; ++i) {
 			if (threads[i].error_code) {
 				fprintf(stderr, "Thread %u failed with error code %u.\n", i, threads[i].error_code);
 				goto loopend;
@@ -188,7 +194,7 @@ loopend:
 	FAIL_IF(!actual.thread_data[0].mem.mem_ptr);
 
 	// Cleanup tmp 
-	for (unsigned i = 0; i < N; ++i)
+	for (unsigned i = 0; i < GEN_STATES_TCNT; ++i)
 		if (tmp.thread_data[i].mem.mem_ptr)
 			nq_mem_free(&tmp.thread_data[i].mem);
 
@@ -198,7 +204,7 @@ loopend:
 	nq_state_t* states = (nq_state_t*)nq_mem_alloc(unified, sizeof(nq_state_t) * actual.total_len);
 
 	uint64_t offset = 0;
-	for (unsigned i = 0; i < N; ++i) {
+	for (unsigned i = 0; i < GEN_STATES_TCNT; ++i) {
 		memcpy(states + offset, actual.thread_data[i].mem.mem_ptr, sizeof(nq_state_t) * actual.thread_data[i].result_len);
 		offset += actual.thread_data[i].result_len;
 		nq_mem_free(&actual.thread_data[i].mem);
@@ -207,6 +213,7 @@ loopend:
 	*returned_count = actual.total_len;
 	*locked_row_end = actual.locked_at;
 	return unified;
+#undef GEN_STATES_TCNT
 }
 
 
@@ -293,56 +300,29 @@ done:
 #else 
 static nq_mem_handle_t* internal_gen_states_rowlocked(const unsigned int lock_at_row, uint64_t* const returned_count, const uint64_t absolute_max_count) {
 	nq_state_t master = init_nq_state();
+//NOTE: if reflection elimination is enabled, it is assumed that THE LEFT HALF of the board will be populated.
+//As such, we can't simply place a queen on position N/2-1 and let gen_states_rowlock give us all states from that position on because
+//although the state count is correct, queens are on the RIGHT half and weighting in kernels doesn't work properly.
+#ifdef ENABLE_STATIC_HALF_SEARCHSPACE_REFLECTION_ELIMINATION
+	uint64_t total_len, tmp_len;
+	master.curr_row=1;
+	place_queen_at(&master, 0, 0);
+	nq_mem_handle_t* buf = gen_states_rowlock(&master, lock_at_row, absolute_max_count, &total_len);
 
-	/*nq_state_t* approx_states;
-	uint64_t buf_len = 0;
-	if (existing_states) {
-		approx_states = existing_states;
-		buf_len = existing_cnt;
-	} else {
-		approx_states = (nq_state_t*)malloc(sizeof(nq_state_t) * STATE_GENERATION_POOL_COUNT);
-		buf_len = STATE_GENERATION_POOL_COUNT;
+	for (int i = 1; i < CEILING(N, 2); ++i) {
+		remove_queen_at(&master, 0, i-1);
+		place_queen_at(&master, 0, i);
+		nq_mem_handle_t* tmp_res = gen_states_rowlock(&master, lock_at_row, absolute_max_count, &tmp_len);
+		nq_mem_realloc(buf, (total_len + tmp_len) * sizeof(nq_state_t));
+		memcpy(((nq_state_t*)buf->mem_ptr)+total_len, tmp_res->mem_ptr, sizeof(nq_state_t) * tmp_len);
+		nq_mem_free(tmp_res);
+		total_len += tmp_len;
 	}
-	if (!approx_states)
-		return NULL;
-
-
-	uint64_t cnt;
-	for (cnt = 0; cnt < absolute_max_count; ++cnt) {
-		bool advanced;
-		do {
-			advanced = locked_advance_nq_state(&master, 0, lock_at_row - 1);
-		} while (advanced && //While we have made an advancement and that advancement is either:
-			(!NQ_FREE_COLS_AT(&master, master.curr_row + 1) || //unsolvable further or
-				master.queen_at_index[master.curr_row] == UNSET_QUEEN_INDEX //or not fully explored (i.e. unset queen at last locked row)
-				));
-
-		if (advanced) {
-			memcpy(&approx_states[cnt], &master, sizeof(nq_state_t));
-			approx_states[cnt].curr_row++; //We need this to be pointing at the first empty row (which is not the current value
-			//Resize buffer if needed
-			if (buf_len - 1 == cnt) {
-				//Linear incremental resize. Whilst this means more calls to realloc, it gives finer controll over the buffer allowing
-				//us to use full memory if needs be without tremendous overallocation
-				buf_len += STATE_GENERATION_POOL_COUNT;
-				nq_state_t* reallocd_approx_states = (nq_state_t*)realloc(approx_states, sizeof(nq_state_t) * buf_len);
-				if (!reallocd_approx_states) {
-					free(approx_states);
-					return NULL;
-				} else {
-					approx_states = reallocd_approx_states;
-				}
-			}
-		} else {
-			break;
-		}
-	}
-	if (absolute_max_count == cnt) {
-		free(approx_states);
-		return NULL;
-	}*/
-
+	*returned_count = total_len;
+	return buf;
+#else
 	return gen_states_rowlock(&master, lock_at_row, absolute_max_count, returned_count);
+#endif
 }
 
 //Generate states by search.

@@ -23,8 +23,14 @@
 //was observed so this will likely be fine.
 #define USE_REGISTER_ONLY_KERNEL
 
+//If defined, state generation is altered to place queens on the first ceil(N/2) columns of the first row. Eliminating ~half the search space
+//as it is a reflection of the other ~half. Solving kernels are adjusted to multiply their results with the relevant factor.
+//I.e. if row 0's queen index is <= floor(N/2) then the factor is 2, and if it is == floor(N/2)+1 (which is only the case when N%2!=0) then 1.
+//NOTE: As of now, only the register based and smem based kernels support this.
+#define ENABLE_STATIC_HALF_SEARCHSPACE_REFLECTION_ELIMINATION 1
+
 //The number N for the puzzle.
-#define N 18
+#define N 20
 
 // Number of kernel launches for a given input to run. This is to be used when timing the kernels only. 
 // Since results are not cleared or accumulated between runs, this may result in incorrect (inflated) results.
@@ -51,7 +57,7 @@
 
 //If defined, state generation is done accross multiple threads on the host. This requires pthread (a port exists for windows called pthread4w which can be used)
 //If undefined, state generation is serial (hence slower)
-#define ENABLE_THREADED_STATE_GENERATION
+//#define ENABLE_THREADED_STATE_GENERATION
 
 //Shared memory size. Though variable for CC 8+ and potentially configurable in earlier cc's, we fix it for constant expression evaluation bellow.
 //Change to match device's CC! If underestimating, multi-block residency per SM will likely compensate (CC 5.0+) but it's best to align to be a multiple of device's shared memory allocation!
