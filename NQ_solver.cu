@@ -406,8 +406,8 @@ int main(int argc, char** argv) {
 	} else { // Just solve without reading from file
 #endif
 		if (!try_with_statecnt) {
-			printf("WARN: Test-solve run without set number of states. Defaulting to 50M\n");
-			try_with_statecnt = 50000000;
+			printf("WARN: Test-solve run without set number of states. Defaulting to 80M\n");
+			try_with_statecnt = 80000000;
 		}
 		uint64_t gen_cnt;
 		unsigned locked_at;
