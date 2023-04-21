@@ -238,7 +238,7 @@ static nq_mem_handle_t* gen_states_threaded_rowlock(const unsigned row_lock, uin
 
 	printf("Lock at row %u... ", row_lock);
 	fflush(stdout);
-
+	//TODO: why is state elimination not implemented here... This can mess things up...
 	for (unsigned i = 0; i < N; ++i) {
 		threads[i].first_queen_idx = i;
 		threads[i].lock_at_row = row_lock;
@@ -350,7 +350,7 @@ static nq_mem_handle_t* gen_states(const unsigned int how_many, uint64_t* const 
 		nq_mem_handle_t* mh = internal_gen_states_rowlocked(lock_at_row, &tmp.len, 0);
 		tmp.mem = mh;
 
-		printf(" %" PRIu64" states generated.\n", tmp.len);
+		printf(" %" PRIu64" states generated. (%s)\n", tmp.len, util_size_to_human_readable(tmp.len*sizeof(nq_state_t)));
 		if (!tmp.mem) {
 			printf("Failed to allocate memory or allocation surrpaces maximum state count when locking at row %u\n", lock_at_row);
 			break;
