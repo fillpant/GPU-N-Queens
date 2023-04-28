@@ -73,6 +73,11 @@
 //If defined, states won't be aligned to any specific value (in the interest of memory saving, may help)
 #define MEM_SAVING_STATES
 
+//If defined, state IO will try to read compilation flags from the state files to check if they can be used with the current compilation of the program.
+//DISABLE for 'legacy' files (i.e. those generated without this.) This is here purely because someone didn't plan the files out well enough :-)
+#define COMPILATION_PARAMETER_FLAGS_IN_STATE_FILES
+
+
 #ifndef USE_REGISTER_ONLY_KERNEL
 //When using the single 'do it all' kernel, blocks are 1-dimensional. The size of the block impacts shared memory allocation. THIS VALUE MUST BE DIVISIBLE BY 32!
 //Shared memory requirements are this many nq_state_t's plus 32 unsigned ints (aligned) per block. The size of nq_state_t varies depending on N.

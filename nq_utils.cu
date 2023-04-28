@@ -10,6 +10,7 @@
 #include "assert.h"
 
 #define NQ_STATE_UTIL_CMP_INTEGERS_ORDERING(a,b) (((a)>(b))-((a)<(b)))
+#define NQ_STATE_FILE_VERSION 1
 
 const static uint32_t crc_mtable[] = { // source: https://web.mit.edu/freebsd/head/sys/libkern/crc32.c
 	0x00000000, 0x77073096, 0xee0e612c, 0x990951ba, 0x076dc419, 0x706af48f,
@@ -58,6 +59,19 @@ const static uint32_t crc_mtable[] = { // source: https://web.mit.edu/freebsd/he
 };
 
 
+//Produces a 64-bit bitset with flags indicating which specific features affecting state
+//generation are toggled. These are 'breaking' features only, i.e. if states are generated
+//with at least one of them set differently, the results may be inaccurate.
+static bitset64_t util_state_gen_breaking_compilation_flags(void) {
+	uint64_t flags = 0;
+#ifdef NQ_ENABLE_EXPERIMENTAL_OPTIMISATIONS 
+	BS_SET_BIT64(flags, 0);
+#endif
+#ifdef ENABLE_STATIC_HALF_SEARCHSPACE_REFLECTION_ELIMINATION
+	BS_SET_BIT64(flags, 1);
+#endif
+	return flags;
+}
 
 __host__ char* util_joining_strings(char** argv, unsigned argc) {
 	size_t cnt = 0;
@@ -127,11 +141,18 @@ void* util_copy_to_pinned_mem(void* data, size_t element_size, size_t element_co
 int util_write_nq_states_to_stream(FILE* const stream, nq_state_t* states, uint64_t len, const unsigned char locked_at_row) {
 	if (stream && len) {
 		const unsigned char en = N;
+#ifdef COMPILATION_PARAMETER_FLAGS_IN_STATE_FILES
+		const uint32_t file_version = NQ_STATE_FILE_VERSION;
+		const bitset64_t flags = util_state_gen_breaking_compilation_flags();
+#endif
 		bool doHeadersFor[N] = {};
 		nq_state_t* ptr = states;
 		for (; ptr < states + len; ++ptr)
 			doHeadersFor[ptr->curr_row] = 1;
-
+#ifdef COMPILATION_PARAMETER_FLAGS_IN_STATE_FILES
+		fwrite(&file_version, sizeof(uint32_t), 1, stream);
+		fwrite(&flags, sizeof(bitset64_t), 1, stream);
+#endif
 		fwrite(&en, sizeof(unsigned char), 1, stream);
 		fwrite(&locked_at_row, sizeof(unsigned char), 1, stream);
 		fwrite(&len, sizeof(uint64_t), 1, stream);
@@ -171,6 +192,19 @@ int util_read_nq_states_from_stream(FILE* const stream, nq_mem_handle_t* state_h
 	if (stream && len && state_handle && locked_at_row) {
 		unsigned char en = 0;
 
+#ifdef COMPILATION_PARAMETER_FLAGS_IN_STATE_FILES
+		uint32_t version = 0;
+		bitset64_t flags = 0;
+		fread(&version, sizeof(uint32_t), 1, stream);
+		fread(&flags, sizeof(bitset64_t), 1, stream);
+
+		if (version != NQ_STATE_FILE_VERSION) {
+			return -3;
+		}
+		if (util_state_gen_breaking_compilation_flags() != flags) {
+			return -4;
+		}
+#endif
 		fread(&en, sizeof(unsigned char), 1, stream);
 		fread(locked_at_row, sizeof(unsigned char), 1, stream);
 		fread(len, sizeof(uint64_t), 1, stream);
@@ -178,10 +212,10 @@ int util_read_nq_states_from_stream(FILE* const stream, nq_mem_handle_t* state_h
 		// Check N is correct
 		assert(skip_n_check || N == en);
 		nq_mem_init(state_handle);
-		nq_state_t* states = (nq_state_t*) nq_mem_alloc(state_handle, sizeof(nq_state_t) * (*len));
-		if (!states) 
+		nq_state_t* states = (nq_state_t*)nq_mem_alloc(state_handle, sizeof(nq_state_t) * (*len));
+		if (!states)
 			return -1;
-		
+
 		nq_state_t* bpos = states;
 		unsigned char tmp_buff[N];
 		while (1) {
@@ -197,7 +231,7 @@ int util_read_nq_states_from_stream(FILE* const stream, nq_mem_handle_t* state_h
 			fread(&cnt, sizeof(uint64_t), 1, stream);
 
 			//Make sure writing cnt many states to bpos won't push us out of bounds
-			assert(bpos + cnt <= ((states) + *len));
+			assert(bpos + cnt <= ((states)+*len));
 
 			//Either empty segment or segment non empty and we have stuff to read.
 			assert(!cnt || cnt > 0 && !feof(stream));
@@ -246,7 +280,8 @@ static bitset32_t is_nq_state_valid(const nq_state_t* const st, const unsigned l
 				util_visualise_nq_state(st, true);
 				return result | NQ_VALIDATION_INVALID_STATE;
 			}
-		} else {
+		}
+		else {
 			if (st->queen_at_index[i] != UNSET_QUEEN_INDEX) {
 				util_visualise_nq_state(st, true);
 				return result | NQ_VALIDATION_INVALID_STATE;

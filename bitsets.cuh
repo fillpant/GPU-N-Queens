@@ -8,6 +8,10 @@
 #define BS_SET_BIT(bw,idx) ((bw)|(1<<(idx)))
 #define BS_CLEAR_BIT(bw,idx) ((bw)&~(1<<(idx)))
 
+#define BS_GET_BIT64(bw,idx) (0x01&((bw)>>(idx)))
+#define BS_SET_BIT64(bw,idx) ((bw)|(((bitset64_t)1)<<(idx)))
+#define BS_CLEAR_BIT64(bw,idx) ((bw)&~(((bitset64_t)1)<<(idx)))
+
 #define BITSET8_MAX UINT8_MAX
 #define BITSET16_MAX UINT16_MAX 
 #define BITSET32_MAX UINT32_MAX
