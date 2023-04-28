@@ -327,6 +327,9 @@ int main(int argc, char** argv) {
 	}
 
 	printf("\nCompiled for N=%u\n", N);
+	char* joined_args = util_joining_strings(argv, argc);
+	printf("\tCommand: %s\n", joined_args);
+	free(joined_args);
 #ifdef NQ_ENABLE_EXPERIMENTAL_OPTIMISATIONS
 	printf("\tExperimental optimizations enabled!\n");
 #endif

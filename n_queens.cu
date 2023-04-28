@@ -65,7 +65,7 @@ __host__ nq_mem_handle_t* gen_states_rowlock(const nq_state_t* const __restrict_
 			break;
 		}
 	}
-	//States generated are either exactly as many as the max value, or the loop exited as it hit the limit.
+	//States generated are either exactly as many as the max value, or the loop exited as it hit the limit. Unrealistic, but oh well.
 	if (cnt == UINT64_MAX) {
 		errno = EOVERFLOW;
 		nq_mem_free(alloc);
@@ -131,12 +131,12 @@ static nq_mem_handle_t* gen_states_threaded(const uint64_t how_many, uint64_t* c
 #define GEN_STATES_TCNT N
 #endif
 	const uint64_t absolute_max_states = (uint64_t)(how_many * (1 + STATE_GENERATION_LIMIT_PLAY_FACTOR));
-	//TODO Untested logic. Log base GEN_STATES_TCNT or GEN_STATES_TCNT+1?
-	unsigned int lock_at_row = (unsigned int)(log((double)how_many) / log(GEN_STATES_TCNT+1));
+	//Keep as N. Fact we're placing on first row doesn't restrict queens from any position in following rows so it's (N/2)*N*N*N*N*N ... 
+	unsigned int lock_at_row = (unsigned int)(log((double)how_many) / log(N));
 	lock_at_row = lock_at_row >= N ? N - 1 : lock_at_row;
 	FAIL_IF(!lock_at_row);
 
-	typedef struct { uint64_t total_len; internal_state_gen_thread_data_t thread_data[N]; unsigned locked_at; } buf_t;
+	typedef struct { uint64_t total_len; internal_state_gen_thread_data_t thread_data[GEN_STATES_TCNT]; unsigned locked_at; } buf_t;
 
 	buf_t tmp, actual; tmp = actual = { 0, {}, 0 };
 

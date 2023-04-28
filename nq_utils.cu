@@ -58,6 +58,27 @@ const static uint32_t crc_mtable[] = { // source: https://web.mit.edu/freebsd/he
 };
 
 
+
+__host__ char* util_joining_strings(char** argv, unsigned argc) {
+	size_t cnt = 0;
+	for (unsigned i = 0; i < argc; ++i) {
+		cnt += strlen(argv[i]) + 1;
+	}
+
+	cnt = MAX(sizeof(char) * cnt, sizeof(char));
+	char* mem = (char*)malloc(cnt);
+
+	char* ptr = mem;
+	for (unsigned i = 0; i < argc; ++i) {
+		for (size_t j = 0; j < strlen(argv[i]); ++j) {
+			*ptr++ = argv[i][j];
+		}
+		*ptr++ = ' ';
+	}
+	mem[cnt - 1] = '\0';
+	return mem;
+}
+
 static int nq_state_sort_cmp(const void* a, const void* b) {
 	return memcmp(a, b, sizeof(nq_state_t));
 }

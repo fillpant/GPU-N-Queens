@@ -46,5 +46,6 @@ void util_prettyprint_nq_state(nq_state_t* s);
 char* util_bits_to_string(unsigned long long num, unsigned bits);
 char* util_milliseconds_to_duration(uint64_t ms);
 bool util_nq_states_equal(nq_state_t* one, nq_state_t* two);
+__host__ char* util_joining_strings(char** argv, unsigned argc);
 __host__ __device__ void util_bits_to_buf(unsigned long long num, unsigned bits, char arr[]);
 #endif
