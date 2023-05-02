@@ -29,8 +29,13 @@
 //NOTE: As of now, only the register based and smem based kernels support this.
 #define ENABLE_STATIC_HALF_SEARCHSPACE_REFLECTION_ELIMINATION 1
 
+//If defined, result counting will be performed on 64 bit types across the board (Host and Device code). The implications of this are potentially slower
+//kernel code and higher memory requirements than the alternative (32 bit types), but a significantly smaller chance of incorrect results as a result of overflows.
+//For larger N, or non-experimental runs, it's recomended to define this directive.
+#define USE_64_BIT_RESULT_COUNTERS
+
 //The number N for the puzzle.
-#define N 24
+#define N 17
 
 // Number of kernel launches for a given input to run. This is to be used when timing the kernels only. 
 // Since results are not cleared or accumulated between runs, this may result in incorrect (inflated) results.
@@ -95,6 +100,8 @@
 // elements big where X is this constant.)
 #define STATE_GENERATION_POOL_COUNT 4194304
 
+#define PPDR_TO_STR(x) #x // ty: https://stackoverflow.com/a/14721031/4136240
+#define PPDR_TO_STR_EXP(x) PPDR_TO_STR(x) // ty: https://stackoverflow.com/a/14721031/4136240
 #define CEILING(x,y) (((x) + (y) - 1) / (y)) // ty: https://stackoverflow.com/q/11363304
 
 #define THREAD_INDX_2D_BLOCK (threadIdx.y * blockDim.x + threadIdx.x)
@@ -115,6 +122,13 @@
 
 #if READ_SUMMARY_FROM_GPU_EVERY_RUNS < 0
 #error
+#endif
+
+#ifndef USE_64_BIT_RESULT_COUNTERS
+typedef unsigned nq_result_t;
+#pragma message("WARN: Using 32-bit result counters. This may lead to incorrect computation in the case of an overflow! For result accuracy, define USE_64_BIT_RESULT_COUNTERS")
+#else
+typedef unsigned long long int nq_result_t;
 #endif
 
 #ifdef __INTELLISENSE__ //Workarround to convince VS everything is under control...

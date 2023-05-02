@@ -67,7 +67,7 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 		FAIL_IF(!check_gpu_compatibility(configs[gpuc].device_id, sizeof(nq_state_t) * padded_states_per_device));
 	}
 
-	typedef struct { nq_state_t* d_states; unsigned d_statecnt, d_statecnt_padded, block_count; unsigned* d_results; } gpudata_t;
+	typedef struct { nq_state_t* d_states; unsigned d_statecnt, d_statecnt_padded, block_count; nq_result_t* d_results; } gpudata_t;
 
 	gpudata_t* gdata = (gpudata_t*)calloc(config_cnt, sizeof(gpudata_t));
 
@@ -88,18 +88,18 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 		printf("Preparing device %u...\n", configs[gpuc].device_id);
 
 		nq_state_t* d_states = 0;
-		unsigned* d_result = 0;
+		nq_result_t* d_result = 0;
 		CHECK_CUDA_ERROR(cudaMalloc(&d_states, sizeof(nq_state_t) * padded_states_per_device));
-		CHECK_CUDA_ERROR(cudaMalloc(&d_result, sizeof(unsigned) * block_cnt_doublesweep_light_adv));
+		CHECK_CUDA_ERROR(cudaMalloc(&d_result, sizeof(nq_result_t) * block_cnt_doublesweep_light_adv));
 		if (configs[gpuc].async) {
 			CHECK_CUDA_ERROR(cudaMemsetAsync(d_states, 0, sizeof(nq_state_t) * padded_states_per_device));
 			CHECK_CUDA_ERROR(cudaMemcpyAsync(d_states, tmp_states, sizeof(nq_state_t) * states_per_device, cudaMemcpyHostToDevice));
-			CHECK_CUDA_ERROR(cudaMemsetAsync(d_result, 0, sizeof(unsigned) * block_cnt_doublesweep_light_adv));
+			CHECK_CUDA_ERROR(cudaMemsetAsync(d_result, 0, sizeof(nq_result_t) * block_cnt_doublesweep_light_adv));
 		}
 		else {
 			CHECK_CUDA_ERROR(cudaMemset(d_states, 0, sizeof(nq_state_t) * padded_states_per_device));
 			CHECK_CUDA_ERROR(cudaMemcpy(d_states, tmp_states, sizeof(nq_state_t) * states_per_device, cudaMemcpyHostToDevice));
-			CHECK_CUDA_ERROR(cudaMemset(d_result, 0, sizeof(unsigned) * block_cnt_doublesweep_light_adv));
+			CHECK_CUDA_ERROR(cudaMemset(d_result, 0, sizeof(nq_result_t) * block_cnt_doublesweep_light_adv));
 		}
 		tmp_states += states_per_device;
 
@@ -129,7 +129,7 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 			CHECK_CUDA_ERROR(cudaSetDevice(configs[gpuc].device_id));
 			max_blocks = MAX(max_blocks, gdata[gpuc].block_count);
 #ifdef USE_REGISTER_ONLY_KERNEL
-			int tc = COMPLETE_KERNEL_BLOCK_THREAD_COUNT;
+			//int tc = COMPLETE_KERNEL_BLOCK_THREAD_COUNT;
 			kern_doitall_v2_regld CUDA_KERNEL(gdata[gpuc].block_count, COMPLETE_KERNEL_BLOCK_THREAD_COUNT)(gdata[gpuc].d_states, gdata[gpuc].d_statecnt_padded, gdata[gpuc].d_results);
 #else
 			kern_doitall_v2_smem CUDA_KERNEL(gdata[gpuc].block_count, COMPLETE_KERNEL_BLOCK_THREAD_COUNT)(gdata[gpuc].d_states, gdata[gpuc].d_statecnt_padded, gdata[gpuc].d_results);
@@ -159,11 +159,11 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 	printf(">>> No host-result summarisation. During profiling results may be inaccurate!\n");
 	return result;
 #else
-		unsigned* per_block_results;
-		CHECK_CUDA_ERROR(cudaMallocHost(&per_block_results, sizeof(unsigned) * max_blocks));
+		unsigned long long int* per_block_results;
+		CHECK_CUDA_ERROR(cudaMallocHost(&per_block_results, sizeof(nq_result_t) * max_blocks));
 		for (unsigned gpuc = 0; gpuc < config_cnt; ++gpuc) {
 			CHECK_CUDA_ERROR(cudaSetDevice(configs[gpuc].device_id));
-			CHECK_CUDA_ERROR(cudaMemcpy(per_block_results, gdata[gpuc].d_results, sizeof(unsigned) * gdata[gpuc].block_count, cudaMemcpyDeviceToHost));
+			CHECK_CUDA_ERROR(cudaMemcpy(per_block_results, gdata[gpuc].d_results, sizeof(nq_result_t) * gdata[gpuc].block_count, cudaMemcpyDeviceToHost));
 			for (unsigned a = 0; a < gdata[gpuc].block_count; ++a)
 				result += per_block_results[a];
 			CHECK_CUDA_ERROR(cudaFree(gdata[gpuc].d_states));
@@ -335,11 +335,11 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 //			sols[blockIdx.x] += t_sols;
 //	}
 
-	__global__ void kern_doitall_v2_regld(const nq_state_t* const __restrict__ states, const unsigned state_cnt, unsigned* const __restrict__ sols) {
+	__global__ void kern_doitall_v2_regld(const nq_state_t* const __restrict__ states, const unsigned state_cnt, nq_result_t* const __restrict__ sols) {
 		const unsigned local_idx = threadIdx.x;
 		const unsigned global_idx = blockIdx.x * blockDim.x + local_idx;
 		__shared__ unsigned char smem[COMPLETE_KERNEL_BLOCK_THREAD_COUNT * N + sizeof(unsigned int) * WARP_SIZE];
-		register unsigned t_sols = 0;
+		register nq_result_t t_sols = 0;
 
 		if (global_idx < state_cnt) {
 			unsigned char* const __restrict__ l_smem = smem + local_idx * N;
@@ -348,11 +348,13 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 			register bitset32_t queens_in_columns = states[global_idx].queens_in_columns;
 			register uint64_t diagonal = states[global_idx].diagonals.diagonal, antidiagonal = states[global_idx].diagonals.antidiagonal;
 			register int curr_row = states[global_idx].curr_row;
-			register int direction = 0;
 			//The queens at index array cannot be placed in a register (without a lot of effort and preprocessor 'hacks' that is) so it stays in smem.
 #pragma unroll
 			for (int i = 0; i < N; ++i)	l_smem[i] = states[global_idx].queen_at_index[i];
-
+#ifdef ENABLE_STATIC_HALF_SEARCHSPACE_REFLECTION_ELIMINATION
+			//TODO assumes the solver will never be given a state where locked_row_end is <1
+			register int mult_res_2 = l_smem[0] < (N >> 1);
+#endif
 			do {
 				int res = curr_row >= locked_row_end;
 				if (!__ballot_sync(0xFFFFFFFF, res)) break; // Whole warp finished
@@ -379,6 +381,7 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 							const unsigned col = intrin_ffs_nosub(free_cols);
 							PLACE_QUEEN_AT(col, curr_row, queens_in_columns, l_smem, diagonal, antidiagonal);
 							// If the current row is not past the end of the board, move to next.
+							// This is compiled to [setp, selp, add] so no branching.
 							if (curr_row < N - 1)
 								++curr_row;
 						done: break;
@@ -392,6 +395,7 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 						const int POPCNT(free_cols, popcnt);
 						if (popcnt == 1) {
 #ifdef NQ_ENABLE_EXPERIMENTAL_OPTIMISATIONS
+
 							const unsigned col = intrin_find_leading_one_u32(free_cols);
 #else
 							const unsigned col = __ffs(free_cols) + 1;
@@ -403,17 +407,49 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 					}
 				}
 				__syncwarp();
+#if defined(NQ_ENABLE_EXPERIMENTAL_OPTIMISATIONS) && defined(USE_64_BIT_RESULT_COUNTERS)
+				static_assert(sizeof(queens_in_columns) == 4, "Experimental optimisation: queens_in_columns MUST be a 32 bit type.");
+				static_assert(sizeof(t_sols) == 8, "Experimental optimisation: t_sols MUST be a 64 bit type.");
+				//Compiler produces setp, selp, add for the desired operation.
+				//The added instruction (selp) takes extra time for no reason.
+				//Eliminate it using predication! Predicate the add to only touch data
+				//when the predicate holds, without converting it to an integer!
+				//Result: setp followed by predicated add.
+				//On isolated tests for sm_80 on 3090, compiler's version took 97 clock 
+				//cycles, and mine took 95.
+
+				asm("{\n\t"
+				    ".reg .pred %p;\n\t"
+					"setp.eq.u32 %p, %1, %2;\n\t"
+					"@%p add.u64 %0, %0, 1;\n"
+				"}" : "+l"(t_sols) : "r" (queens_in_columns) , "r"(N_MASK));
+				//Curious observation: 
+				//The regular snipper bellow compiled to setp.eq.s32, setlp.u64, add.s64
+				//The registers operated upon were all unsigned, so the mixing of signed
+				//addition and equality checks are strange in this situation?
+				//Probably influenced by the compiler's internal knowledge of these
+				//instructions implementations, but strange regardless. For safety, I stuck
+				//with the docs and used u64/u32 where appropriate
+
+#else 
 				t_sols += (queens_in_columns == N_MASK);
+#endif
 			} while (1);
 #ifdef ENABLE_STATIC_HALF_SEARCHSPACE_REFLECTION_ELIMINATION
-			t_sols <<= (l_smem[0] < N/2);
+			t_sols <<= mult_res_2;
 #endif
 		}
+#ifdef USE_64_BIT_RESULT_COUNTERS
+		//Each thread atomically adds its count to the global memory area.
+		atomicAdd(&sols[blockIdx.x], t_sols);
+#else
+		//Warp shuffling intrinsics with 64 bit integer operands not available in current CUDA versions.
 		__syncthreads();
 		t_sols = block_reduce_sum_shfl_variwarp((unsigned)t_sols, (unsigned int*)&smem[COMPLETE_KERNEL_BLOCK_THREAD_COUNT * N]);
 
 		if (!local_idx)
 			sols[blockIdx.x] += t_sols;
+#endif
 	}
 #else 
 	// Warning: state_cnt MUST be a multiple of 32 and states must be padded respectively.

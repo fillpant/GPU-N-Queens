@@ -330,6 +330,7 @@ int main(int argc, char** argv) {
 	char* joined_args = util_joining_strings(argv, argc);
 	printf("\tCommand: %s\n", joined_args);
 	free(joined_args);
+	printf("\tUsing %u-bit result counters\n", sizeof(nq_result_t) * 8);
 #ifdef NQ_ENABLE_EXPERIMENTAL_OPTIMISATIONS
 	printf("\tExperimental optimizations enabled!\n");
 #endif
