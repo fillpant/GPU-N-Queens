@@ -9,6 +9,7 @@
 #include "GPU_NQueens.cuh"
 #include <inttypes.h>
 #include <math.h>
+#include <time.h>
 #include <string.h>
 
 typedef struct cag_option cag_opt_t;
@@ -330,7 +331,7 @@ int main(int argc, char** argv) {
 	char* joined_args = util_joining_strings(argv, argc);
 	printf("\tCommand: %s\n", joined_args);
 	free(joined_args);
-	printf("\tUsing %u-bit result counters\n", sizeof(nq_result_t) * 8);
+	printf("\tUsing %zu-bit result counters\n", sizeof(nq_result_t) * 8);
 #ifdef NQ_ENABLE_EXPERIMENTAL_OPTIMISATIONS
 	printf("\tExperimental optimizations enabled!\n");
 #endif
@@ -352,6 +353,11 @@ int main(int argc, char** argv) {
 	printf("\tState memory size: %zu bytes.\n", sizeof(nq_state_t));
 	printf("\tCurrent block size: %llu\n", COMPLETE_KERNEL_BLOCK_THREAD_COUNT);
 	printf("\tState generation memblock size: %zu\n", (size_t)STATE_GENERATION_POOL_COUNT);
+	time_t ctime = time(NULL);
+	struct tm* td = gmtime(&ctime);
+	mktime(td);
+	printf("\tCurrent time: %s\n", asctime(td));
+
 
 	printf("\n\n");
 	//State generation
