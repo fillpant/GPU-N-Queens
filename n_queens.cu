@@ -231,15 +231,20 @@ loopend:
 * @return a pointer to an nq_state_t buffer of at least returned_count many elements, or NULL in case of failure.
 */
 static nq_mem_handle_t* gen_states_threaded_rowlock(const unsigned row_lock, uint64_t* const __restrict__ returned_count) {
+#ifdef ENABLE_STATIC_HALF_SEARCHSPACE_REFLECTION_ELIMINATION
+#define GEN_STATES_TCNT CEILING(N,2)
+#else
+#define GEN_STATES_TCNT N
+#endif
 	FAIL_IF(!returned_count);
 	*returned_count = 0;
-	internal_state_gen_thread_data_t threads[N] = {};
-	pthread_t thread_ids[N] = {};
+	internal_state_gen_thread_data_t threads[GEN_STATES_TCNT] = {};
+	pthread_t thread_ids[GEN_STATES_TCNT] = {};
 
 	printf("Lock at row %u... ", row_lock);
 	fflush(stdout);
-	//TODO: why is state elimination not implemented here... This can mess things up...
-	for (unsigned i = 0; i < N; ++i) {
+
+	for (unsigned i = 0; i < GEN_STATES_TCNT; ++i) {
 		threads[i].first_queen_idx = i;
 		threads[i].lock_at_row = row_lock;
 		nq_mem_init(&threads[i].mem);
@@ -247,7 +252,7 @@ static nq_mem_handle_t* gen_states_threaded_rowlock(const unsigned row_lock, uin
 	}
 
 	// Wait for each thread to finish
-	for (unsigned i = 0; i < N; ++i)
+	for (unsigned i = 0; i < GEN_STATES_TCNT; ++i)
 		pthread_join(thread_ids[i], NULL);
 
 
@@ -255,7 +260,7 @@ static nq_mem_handle_t* gen_states_threaded_rowlock(const unsigned row_lock, uin
 	uint64_t offset = 0;
 	nq_mem_handle_t* unified = NULL;
 	// Collect data from each thread.
-	for (unsigned i = 0; i < N; ++i) {
+	for (unsigned i = 0; i < GEN_STATES_TCNT; ++i) {
 		if (threads[i].error_code) {
 			fprintf(stderr, "Thread %u failed with error code %u.\n", i, threads[i].error_code);
 			goto gen_failed;
@@ -263,12 +268,13 @@ static nq_mem_handle_t* gen_states_threaded_rowlock(const unsigned row_lock, uin
 		*returned_count += threads[i].result_len;
 	}
 	printf("%" PRIu64" states generated\nAllocating concatenation buffer...", *returned_count);
+	fflush(stdout);
 	unified = (nq_mem_handle_t*)malloc(sizeof(nq_mem_handle_t));
 	nq_mem_init(unified);
 	states = (nq_state_t*)nq_mem_alloc(unified, sizeof(nq_state_t) * *returned_count);
 
-	internal_memcpy_thread_data_t memcpyDat[N];
-	for (unsigned i = 0; i < N; ++i) {
+	internal_memcpy_thread_data_t memcpyDat[GEN_STATES_TCNT];
+	for (unsigned i = 0; i < GEN_STATES_TCNT; ++i) {
 		memcpyDat[i].dest = states + offset;
 		memcpyDat[i].src = threads[i].mem.mem_ptr;
 		memcpyDat[i].data_size = sizeof(nq_state_t) * threads[i].result_len;
@@ -278,7 +284,7 @@ static nq_mem_handle_t* gen_states_threaded_rowlock(const unsigned row_lock, uin
 		//free(threads[i].result_ptr);
 	}
 	// Wait for each thread to finish memcpying
-	for (unsigned i = 0; i < N; ++i) {
+	for (unsigned i = 0; i < GEN_STATES_TCNT; ++i) {
 		pthread_join(thread_ids[i], NULL);
 		//Free each buffer after the thread is done using it.
 		nq_mem_free(&threads[i].mem);
@@ -289,11 +295,12 @@ static nq_mem_handle_t* gen_states_threaded_rowlock(const unsigned row_lock, uin
 	goto done;
 gen_failed:
 	// cleanup.
-	for (unsigned i = 0; i < N; ++i)
+	for (unsigned i = 0; i < GEN_STATES_TCNT; ++i)
 		if (threads[i].mem.mem_ptr)
 			nq_mem_free(&threads[i].mem);
 done:
 	return unified;
+#undef GEN_STATES_TCNT
 }
 
 
