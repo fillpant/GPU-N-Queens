@@ -17,7 +17,7 @@ __host__ void copy_states_from_gpu(nq_state_t* host_states, nq_state_t* device_s
 #ifdef USE_REGISTER_ONLY_KERNEL
 __global__ void kern_doitall_v2_regld(const nq_state_t* const __restrict__ states, const unsigned state_cnt, nq_result_t* const __restrict__ sols);
 #else
-__global__ void kern_doitall_v2_smem(const nq_state_t* const __restrict__ states, const uint_least32_t state_cnt, unsigned* const __restrict__ sols);
+__global__ void kern_doitall_v2_smem(const nq_state_t* const __restrict__ states, const uint_least32_t state_cnt, nq_result_t* const __restrict__ sols);
 #endif
 //Inline helpers
 __device__ __forceinline__ unsigned block_reduce_sum_shfl_variwarp(register unsigned threads_val, unsigned int* __restrict__ smem) {

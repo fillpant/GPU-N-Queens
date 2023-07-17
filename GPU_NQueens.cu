@@ -190,7 +190,7 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 	queen_indexes[(row)] = (col); \
 	diagonal |= (1LLU << (col)) << (row); \
 	antidiagonal |= (1LLU << (col)) << (64 - N - (row)); \
-}
+} //TODO: may benefit from bmsk.clamp 
 
 // Performs the inverse operation to the above ^
 // Assumptions are the same as above.
@@ -362,7 +362,7 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 					//Advance state (i.e. place a single queen)
 					while (curr_row >= locked_row_end) {
 						// Queen idx in current row
-						const register unsigned queen_index = l_smem[curr_row];
+						const register int queen_index = l_smem[curr_row];
 						// Free columns across board
 						register bitset32_t free_cols = (~(queens_in_columns | dad_extract_explicit(diagonal, antidiagonal, curr_row)) & N_MASK);
 						// If there's a queen in the current row, means we're back tracking...
@@ -378,7 +378,7 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 						else {
 							// If there are free cols however, we place a queen! 
 							// Work out the column (first available)
-							const unsigned col = intrin_ffs_nosub(free_cols);
+							const int col = intrin_ffs_nosub(free_cols);
 							PLACE_QUEEN_AT(col, curr_row, queens_in_columns, l_smem, diagonal, antidiagonal);
 							// If the current row is not past the end of the board, move to next.
 							// This is compiled to [setp, selp, add] so no branching.
@@ -396,7 +396,7 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 						if (popcnt == 1) {
 #ifdef NQ_ENABLE_EXPERIMENTAL_OPTIMISATIONS
 
-							const unsigned col = intrin_find_leading_one_u32(free_cols);
+							const int col = intrin_find_leading_one_u32(free_cols);
 #else
 							const unsigned col = __ffs(free_cols) + 1;
 #endif
@@ -417,7 +417,6 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 				//Result: setp followed by predicated add.
 				//On isolated tests for sm_80 on 3090, compiler's version took 97 clock 
 				//cycles, and mine took 95.
-
 				asm("{\n\t"
 				    ".reg .pred %p;\n\t"
 					"setp.eq.u32 %p, %1, %2;\n\t"
@@ -434,7 +433,7 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 #else 
 				t_sols += (queens_in_columns == N_MASK);
 #endif
-			} while (1);
+			} while (1); //Infinite loop has termination conditions and modifies global state -- no risk of removal.
 #ifdef ENABLE_STATIC_HALF_SEARCHSPACE_REFLECTION_ELIMINATION
 			t_sols <<= mult_res_2;
 #endif
@@ -453,11 +452,11 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 	}
 #else 
 	// Warning: state_cnt MUST be a multiple of 32 and states must be padded respectively.
-	__global__ void kern_doitall_v2_smem(const nq_state_t* const __restrict__ states, const uint_least32_t state_cnt, unsigned* const __restrict__ sols) {
+	__global__ void kern_doitall_v2_smem(const nq_state_t* const __restrict__ states, const uint_least32_t state_cnt, nq_result_t* const __restrict__ sols) {
 		const uint_least32_t local_idx = threadIdx.x;
 		const uint_least32_t global_idx = blockIdx.x * blockDim.x + local_idx;
 		__shared__ nq_state_t smem[COMPLETE_KERNEL_BLOCK_THREAD_COUNT + CEILING((sizeof(unsigned int) * WARP_SIZE), sizeof(nq_state_t))];
-		register unsigned t_sols = 0;
+		register nq_result_t t_sols = 0;
 
 		if (global_idx < state_cnt) {
 			smem[local_idx].queens_in_columns = states[global_idx].queens_in_columns;
@@ -477,7 +476,17 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 				__syncwarp(); // Threads made to converge before doublesweep_light
 				if (res)	device_doublesweep_light_nq_state(&smem[local_idx]);
 				//__syncwarp(); // Threads made to converge before the following line
+#if defined(NQ_ENABLE_EXPERIMENTAL_OPTIMISATIONS) && defined(USE_64_BIT_RESULT_COUNTERS)
+				static_assert(sizeof(smem[0].queens_in_columns) == 4, "Experimental optimisation: queens_in_columns MUST be a 32 bit type.");
+				static_assert(sizeof(t_sols) == 8, "Experimental optimisation: t_sols MUST be a 64 bit type.");
+				asm("{\n\t"
+					".reg .pred %p;\n\t"
+					"setp.eq.u32 %p, %1, %2;\n\t"
+					"@%p add.u64 %0, %0, 1;\n"
+					"}" : "+l"(t_sols) : "r" (smem[local_idx].queens_in_columns), "r"(N_MASK));
+#else 
 				t_sols += (smem[local_idx].queens_in_columns == N_MASK);//Non divergent
+#endif		
 			//}
 			//__syncwarp();
 			} while (1);
@@ -485,12 +494,17 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 			t_sols <<= (states[global_idx].queen_at_index[0] < N/2);
 #endif
 		}
+#ifdef USE_64_BIT_RESULT_COUNTERS
+		atomicAdd(&sols[blockIdx.x], t_sols);
+#else
 		__syncthreads();
 		t_sols = block_reduce_sum_shfl_variwarp((unsigned)t_sols, (unsigned int*)&smem[COMPLETE_KERNEL_BLOCK_THREAD_COUNT]);
 
 		if (!local_idx) {
 			sols[blockIdx.x] += t_sols;
-	}
+		}
+#endif
+	
 	}
 #endif
 

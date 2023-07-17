@@ -46,7 +46,7 @@ __device__ __forceinline__ unsigned long long intrin_bit_field_insert_b64(unsign
 
 // The intrinsic __ffs performs the following two instructions but manipulates the result to be off by 1, which then needs to be countered by subtracting 1. Sometimes, this
 // operation does not get optimised out by the compiler. This function does not suffer from the problem, provided some bit is set. If no bit is set, 0xFFFFFFFF is retruend.
-__device__ __forceinline__ unsigned intrin_ffs_nosub(unsigned of) {
+__device__ __forceinline__ int intrin_ffs_nosub(int of) {
 	unsigned res;
 	asm("brev.b32 %0, %1;" : "=r"(res) : "r"(of));
 	asm("bfind.shiftamt.u32 %0, %1;" : "=r"(res) : "r"(res));
@@ -67,7 +67,7 @@ __device__ __forceinline__ unsigned intrin_find_leading_one_shiftamt_u32(unsigne
 // 0b00000000000000000000000000000001 the result is 0 -- most significant set bit is at index 0
 // 0b10000000000000000000000000000000 the result is 31 -- most significant set bit is at index 31
 // 0b00000000010000000000000000000001 the result is 22 -- the most significant set bit (leftmost) is at 22.
-__device__ __forceinline__ unsigned intrin_find_leading_one_u32(unsigned of) {
+__device__ __forceinline__ int intrin_find_leading_one_u32(int of) {
 	unsigned res;
 	asm("bfind.u32 %0, %1;" : "=r"(res) : "r"(of));
 	return res;

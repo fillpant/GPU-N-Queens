@@ -65,10 +65,10 @@ const static uint32_t crc_mtable[] = { // source: https://web.mit.edu/freebsd/he
 static bitset64_t util_state_gen_breaking_compilation_flags(void) {
 	uint64_t flags = 0;
 #ifdef NQ_ENABLE_EXPERIMENTAL_OPTIMISATIONS 
-	BS_SET_BIT64(flags, 0);
+	flags = BS_SET_BIT64(flags, 0);
 #endif
 #ifdef ENABLE_STATIC_HALF_SEARCHSPACE_REFLECTION_ELIMINATION
-	BS_SET_BIT64(flags, 1);
+	flags = BS_SET_BIT64(flags, 1);
 #endif
 	return flags;
 }
@@ -125,6 +125,10 @@ void* util_copy_to_pinned_mem(void* data, size_t element_size, size_t element_co
 }
 
 //File format:
+// Header (not present in all files)
+//4 bytes for file version
+//8 bytes for file compilation flags
+// Then:
 //1 byte: N
 //1 byte: Locked row
 //8 bytes: Total states written

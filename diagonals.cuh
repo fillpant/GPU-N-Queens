@@ -15,7 +15,8 @@ __host__ __device__ inline diagonals_t dad_init_blank(void) {
 }
 
 __host__ __device__ __forceinline__ bitset32_t dad_extract_explicit(const uint64_t diagonal, const uint64_t antidiagonal, const unsigned i) {
-	return (uint32_t)((diagonal >> i) | (antidiagonal >> (64 - N - i))) & UINT32_MAX;
+	//Warning: 64-N-i is a signed subtraction in PTX (!)
+	return (uint32_t)((diagonal >> i) | (antidiagonal >> (64 - N - i))) & UINT32_MAX;//UINT32_MAX dropped in PTX code.
 }
 
 __host__ __device__ inline bitset32_t dad_extract(const diagonals_t* const from, const unsigned i) {

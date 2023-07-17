@@ -327,6 +327,15 @@ int main(int argc, char** argv) {
 
 	}
 
+#ifdef ENABLE_PERSISTENT_BACKED_MEMORY
+printf("+ ------------------------------------------------------------------------ +\n")
+printf("|                           =={WARNING}==                                  |\n")
+printf("| Persistent - backed memory allocations are enabled.Memory - mapped files |\n")
+printf("| used in the process may NOT be deleted in case of unsuccessful           |\n")
+printf("| termination or other signal interrupt.Please ensure these files are      |\n")
+printf("| manually deleted!                                                        |\n")
+printf("+ ------------------------------------------------------------------------ +\n")
+#endif
 	printf("\nCompiled for N=%u\n", N);
 	char* joined_args = util_joining_strings(argv, argc);
 	printf("\tCommand: %s\n", joined_args);

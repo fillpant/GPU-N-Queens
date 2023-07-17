@@ -83,6 +83,7 @@
 #define COMPILATION_PARAMETER_FLAGS_IN_STATE_FILES
 
 
+//TODO: We're not using block reductions for summing, thus the 32-per-block ints can be removed now.
 #ifndef USE_REGISTER_ONLY_KERNEL
 //When using the single 'do it all' kernel, blocks are 1-dimensional. The size of the block impacts shared memory allocation. THIS VALUE MUST BE DIVISIBLE BY 32!
 //Shared memory requirements are this many nq_state_t's plus 32 unsigned ints (aligned) per block. The size of nq_state_t varies depending on N.
@@ -158,6 +159,16 @@ typedef unsigned long long int nq_result_t;
 
 #if defined(ENABLE_PERSISTENT_BACKED_MEMORY) && (!defined(__unix__) || !defined(__APPLE__))
 #error "Persistent storage backed memory allocations are not supported in the current system!";
+#endif
+
+#ifdef ENABLE_PERSISTENT_BACKED_MEMORY
+#pragma message("+ ------------------------------------------------------------------------ +")
+#pragma message("|                           =={WARNING}==                                  |")
+#pragma message("| Persistent - backed memory allocations are enabled.Memory - mapped files |")
+#pragma message("| used in the process may NOT be deleted in case of unsuccessful           |")
+#pragma message("| termination or other signal interrupt.Please ensure these files are      |")
+#pragma message("| manually deleted!                                                        |")
+#pragma message("+ ------------------------------------------------------------------------ +")
 #endif
 
 

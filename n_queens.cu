@@ -57,11 +57,13 @@ __host__ nq_mem_handle_t* gen_states_rowlock(const nq_state_t* const __restrict_
 					errno = ENOMEM;
 					nq_mem_free(alloc);
 					return NULL;
-				} else {
+				}
+				else {
 					approx_states = reallocd_approx_states;
 				}
 			}
-		} else {
+		}
+		else {
 			break;
 		}
 	}
@@ -267,12 +269,21 @@ static nq_mem_handle_t* gen_states_threaded_rowlock(const unsigned row_lock, uin
 		}
 		*returned_count += threads[i].result_len;
 	}
-	printf("%" PRIu64" states generated\nAllocating concatenation buffer...", *returned_count);
+	printf("%" PRIu64" states generated\nAllocating concatenation buffer...\n", *returned_count);
 	fflush(stdout);
 	unified = (nq_mem_handle_t*)malloc(sizeof(nq_mem_handle_t));
 	nq_mem_init(unified);
-	states = (nq_state_t*)nq_mem_alloc(unified, sizeof(nq_state_t) * *returned_count);
+	//Assumes 1 thread at minimum
+	states = (nq_state_t*)nq_mem_alloc(unified, sizeof(nq_state_t));//Dummy. Just allocate some memory...
 
+	for (int i = 0; i < GEN_STATES_TCNT; ++i) {
+		states = (nq_state_t*)nq_mem_realloc(unified, sizeof(nq_state_t) * (offset + threads[i].result_len));
+		memcpy(states + offset, threads[i].mem.mem_ptr, sizeof(nq_state_t) * threads[i].result_len);
+		offset += threads[i].result_len;
+		nq_mem_free(&threads[i].mem);
+	}
+
+	/*
 	internal_memcpy_thread_data_t memcpyDat[GEN_STATES_TCNT];
 	for (unsigned i = 0; i < GEN_STATES_TCNT; ++i) {
 		memcpyDat[i].dest = states + offset;
@@ -290,7 +301,7 @@ static nq_mem_handle_t* gen_states_threaded_rowlock(const unsigned row_lock, uin
 		nq_mem_free(&threads[i].mem);
 		//free(memcpyDat[i].src);
 	}
-
+	*/
 	FAIL_IF(offset != *returned_count);
 	goto done;
 gen_failed:
@@ -307,21 +318,21 @@ done:
 #else 
 static nq_mem_handle_t* internal_gen_states_rowlocked(const unsigned int lock_at_row, uint64_t* const returned_count, const uint64_t absolute_max_count) {
 	nq_state_t master = init_nq_state();
-//NOTE: if reflection elimination is enabled, it is assumed that THE LEFT HALF of the board will be populated.
-//As such, we can't simply place a queen on position N/2-1 and let gen_states_rowlock give us all states from that position on because
-//although the state count is correct, queens are on the RIGHT half and weighting in kernels doesn't work properly.
+	//NOTE: if reflection elimination is enabled, it is assumed that THE LEFT HALF of the board will be populated.
+	//As such, we can't simply place a queen on position N/2-1 and let gen_states_rowlock give us all states from that position on because
+	//although the state count is correct, queens are on the RIGHT half and weighting in kernels doesn't work properly.
 #ifdef ENABLE_STATIC_HALF_SEARCHSPACE_REFLECTION_ELIMINATION
 	uint64_t total_len, tmp_len;
-	master.curr_row=1;
+	master.curr_row = 1;
 	place_queen_at(&master, 0, 0);
 	nq_mem_handle_t* buf = gen_states_rowlock(&master, lock_at_row, absolute_max_count, &total_len);
 
 	for (int i = 1; i < CEILING(N, 2); ++i) {
-		remove_queen_at(&master, 0, i-1);
+		remove_queen_at(&master, 0, i - 1);
 		place_queen_at(&master, 0, i);
 		nq_mem_handle_t* tmp_res = gen_states_rowlock(&master, lock_at_row, absolute_max_count, &tmp_len);
 		nq_mem_realloc(buf, (total_len + tmp_len) * sizeof(nq_state_t));
-		memcpy(((nq_state_t*)buf->mem_ptr)+total_len, tmp_res->mem_ptr, sizeof(nq_state_t) * tmp_len);
+		memcpy(((nq_state_t*)buf->mem_ptr) + total_len, tmp_res->mem_ptr, sizeof(nq_state_t) * tmp_len);
 		nq_mem_free(tmp_res);
 		total_len += tmp_len;
 	}
@@ -357,7 +368,7 @@ static nq_mem_handle_t* gen_states(const unsigned int how_many, uint64_t* const 
 		nq_mem_handle_t* mh = internal_gen_states_rowlocked(lock_at_row, &tmp.len, 0);
 		tmp.mem = mh;
 
-		printf(" %" PRIu64" states generated. (%s)\n", tmp.len, util_size_to_human_readable(tmp.len*sizeof(nq_state_t)));
+		printf(" %" PRIu64" states generated. (%s)\n", tmp.len, util_size_to_human_readable(tmp.len * sizeof(nq_state_t)));
 		if (!tmp.mem) {
 			printf("Failed to allocate memory or allocation surrpaces maximum state count when locking at row %u\n", lock_at_row);
 			break;
@@ -451,7 +462,8 @@ __host__ bool host_doublesweep_light_nq_state(nq_state_t* __restrict__ s) {
 			if (s->curr_row < N - 1)
 				s->curr_row++;
 			changed = true;
-		} else
+		}
+		else
 			break;
 	} while (1);
 	return changed;
