@@ -189,7 +189,7 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 	queens_in_columns = bs_set_bit(queens_in_columns, (col)); \
 	queen_indexes[(row)] = (col); \
 	diagonal |= (1LLU << (col)) << (row); \
-	antidiagonal |= (1LLU << (col)) << (64 - N - (row)); \
+	antidiagonal |= (1LLU << (col)) << (N - (row)); \
 } //TODO: may benefit from bmsk.clamp 
 
 // Performs the inverse operation to the above ^
@@ -198,7 +198,7 @@ __host__ uint64_t gpu_solver_driver(nq_state_t* const states, const uint_least32
 	queens_in_columns = bs_clear_bit(queens_in_columns, (col));\
 	queen_indexes[(row)] = UNSET_QUEEN_INDEX;\
 	diagonal &= ~((1LLU << (col)) << (row));\
-	antidiagonal &= ~((1LLU << (col)) << (64 - N - (row))); \
+	antidiagonal &= ~((1LLU << (col)) << ( N - (row))); \
 }
 
 // TODO to avoid multiplication, we can switch sign as ((~X)-1). THIS ASSUMES TWOS COMPLEMENT.
